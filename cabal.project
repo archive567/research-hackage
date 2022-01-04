@@ -1,0 +1,10 @@
+packages: chart-hackage.cabal
+
+-- if doctests seem broken, uncomment:
+-- See https://github.com/haskell/cabal/issues/6087
+-- write-ghc-environment-files: always
+
+allow-newer: attoparsec
+
+-- Might be helpful when Hackage doesn't build properly...
+-- keep-going: True

@@ -1,0 +1,47 @@
+on: [push]
+name: haskell-ci
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        ghc: ['8.10.4']
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        stack: [true, false]
+    name: ghc ${{ matrix.ghc }} ${{ matrix.os }}
+    steps:
+      - name: clone project
+        uses: actions/checkout@v2
+      - name: setup stanza
+        uses: haskell/actions/setup@v1
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: 3.4
+          enable-stack: true
+          stack-version: 'latest'
+      - name: stack cache
+        if: matrix.stack == 'true'
+        uses: actions/cache@v1
+        with:
+          path: ~/.stack
+          key: ${{ runner.os }}-${{ hashFiles('stack.yaml') }}
+          restore-keys: ${{ runner.os }}-
+      - name: cabal cache
+        if: matrix.stack == 'false'
+        uses: actions/cache@v2
+        with:
+          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
+          path: ~/.cabal/store
+          restore-keys: ${{ runner.os }}-${{ matrix.ghc }}-
+      - name: cabal build
+        if: matrix.stack == 'false'
+        run: |
+          cabal update
+          cabal configure --enable-tests
+          cabal build
+          cabal test
+      - name: stack build
+        if: matrix.stack == 'true'
+        run: |
+          stack update
+          stack build --test --no-install-ghc --system-ghc
