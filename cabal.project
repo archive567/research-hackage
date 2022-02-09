@@ -1,9 +1,2 @@
 packages:
   chart-hackage.cabal
-  ../chart-svg/chart-svg.cabal
-  ../formatn/formatn.cabal
-
-source-repository-package
-  type: git
-  branch: main
-  location: https://github.com/tonyday567/numhask-space.git

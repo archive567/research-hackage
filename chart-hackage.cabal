@@ -40,7 +40,7 @@ library
   default-extensions:
   build-depends:
     base,
-    chart-svg ^>= 0.2.3,
+    chart-svg ^>= 0.3,
     streamly ^>= 0.8,
     streamly-archive ^>= 0.1,
     bytestring ^>= 0.10.12,
