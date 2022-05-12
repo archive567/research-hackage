@@ -4,7 +4,7 @@
 
 This repo is an experiment in:
 
-- reading Haskell package information from =~/.cabal/packages/hackage.haskell.org/01-index.tar"=
+- reading Haskell package information from =~/.cabal/packages/hackage.haskell.org/01-index.tar=
 - parsing cabal details using [[https://hackage.haskell.org/package/flatparse-0.2.2.0][flatparse]] and [[https://hackage.haskell.org/package/streamly][streamly]].
 - creating dependency charts and graphing them with graphviz via [[https://github.com/tonyday567/dotparse][dotparse]] and [[https://hackage.haskell.org/package/chart-svg][chart-svg]].
 - using org-mode for rapid Haskell development.
@@ -581,7 +581,7 @@ depG = stars (Map.toList vdeps)
 
 #+RESULTS:
 
-#+begin_src haskell :results output :export both
+#+begin_src haskell :results output :exports both
 vertexCount depG
 edgeCount depG
 #+end_src
@@ -628,13 +628,13 @@ edgeCount depG
 
 ** packages
 
-[[https://hackage.haskell.org/package/tar-0.5.1.1][tar: Reading, writing and manipulating ".tar" archive files.]]
-[[https://hackage.haskell.org/package/tar-conduit][tar-conduit: Extract and create tar files using conduit for streaming]]
-[[https://hackage.haskell.org/package/streamly-0.8.0/docs/Streamly-Prelude.html][Streamly.Prelude]]
-[[https://hackage.haskell.org/package/flatparse-0.2.2.0/docs/FlatParse-Basic.html][FlatParse.Basic]]
+- [[https://hackage.haskell.org/package/tar-0.5.1.1][tar: Reading, writing and manipulating ".tar" archive files.]]
+- [[https://hackage.haskell.org/package/tar-conduit][tar-conduit: Extract and create tar files using conduit for streaming]]
+- [[https://hackage.haskell.org/package/streamly-0.8.0/docs/Streamly-Prelude.html][Streamly.Prelude]]
+- [[https://hackage.haskell.org/package/flatparse-0.2.2.0/docs/FlatParse-Basic.html][FlatParse.Basic]]
 
 ** other hackage parsing examples
 
-[[https://hackage.haskell.org/package/cabal-install-parsers-0.4.2][cabal-install-parsers]]
-[[https://github.com/J-mie6/ParsleyHaskell][ParsleyHaskell]]
-[[https://hackage.haskell.org/package/Cabal-3.6.1.0/docs/Distribution-Parsec.html#t:ParsecParser][Distribution.Parsec]]
+- [[https://hackage.haskell.org/package/cabal-install-parsers-0.4.2][cabal-install-parsers]]
+- [[https://github.com/J-mie6/ParsleyHaskell][ParsleyHaskell]]
+- [[https://hackage.haskell.org/package/Cabal-3.6.1.0/docs/Distribution-Parsec.html#t:ParsecParser][Distribution.Parsec]]
