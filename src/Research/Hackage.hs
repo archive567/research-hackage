@@ -16,7 +16,9 @@ module Research.Hackage
     archive,
 
     -- * content
-    packages,
+    groupByHeader,
+    groupByPathName,
+    packageStream,
     NameType (..),
     toNameType,
     names,
@@ -145,11 +147,11 @@ rollHeader = Fold step initial done
     done = pure
 
 -- Execute the stream, grouping at the headers (the Lefts).
-packagesByHeader ::
+groupByHeader ::
   S.IsStream t =>
   Unfold IO a (Either Header ByteString) ->
   t IO (Maybe HeaderInfo, Maybe ByteString)
-packagesByHeader arc =
+groupByHeader arc =
   S.unfold arc undefined
     & S.groupsBy (\e _ -> isRight e) rollHeader
 
@@ -174,13 +176,17 @@ rollName = Fold step initial done
     done = pure . bimap (fromMaybe mempty) (fromMaybe mempty)
 
 -- | Execute the stream, grouping by pathName.
-packages ::
+groupByPathName ::
   S.IsStream t =>
   Unfold IO a (Either Header ByteString) ->
   t IO (ByteString, ByteString)
-packages arc =
+groupByPathName arc =
   S.unfold arc undefined
     & S.groupsBy (\e _ -> isRight e) rollName
+
+-- | package stream: tuple is (name, cabal file)
+packageStream :: S.IsStream t => t IO (ByteString, ByteString)
+packageStream = groupByPathName (Unfold.take 10000000 archive)
 
 -- | The types of files in the archive.
 data NameType = CabalName | PreferredVersions | PackageJson | BadlyNamed deriving (Show, Ord, Eq)
@@ -430,7 +436,7 @@ latestCabalFiles =
               first parsePath
                 <$> S.filter
                   ((== CabalName) . toNameType . fst)
-                  (packages (Unfold.take 10000000 archive))
+                  packageStream
           )
 
 -- | valid cabal files with all fields parsing ok
