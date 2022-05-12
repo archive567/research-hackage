@@ -1,160 +1,683 @@
-* chart-hackage
-          :PROPERTIES:
-  :CUSTOM_ID: chart-hackage
-  :END:
-[[https://hackage.haskell.org/package/chart-hackage][[[https://img.shields.io/hackage/v/chart-hackage.svg]]]]
-[[https://github.com/tonyday567/chart-hackage/actions?query=workflow%3Ahaskell-ci][[[https://github.com/tonyday567/chart-hackage/workflows/haskell-ci/badge.svg]]]]
-[[http://packdeps.haskellers.com/reverse/chart-hackage][[[https://img.shields.io/hackage-deps/v/chart-hackage.svg]]]]
+* research-hackage
 
-There are two main ideas in =chart-hackage=.
+[[https://hackage.haskell.org/package/chart-hackage][file:https://img.shields.io/hackage/v/research-hackage.svg]] [[https://github.com/tonyday567/chart-hackage/actions?query=workflow%3Ahaskell-ci][file:https://github.com/tonyday567/research-hackage/workflows/haskell-ci/badge.svg]]
 
-- Within our cabal install, there is a package index in need of cartography.
+This repo is an experiement in:
 
-- as much as possible, develop a Haskell project in org-mode.
+- reading Haskell package information from ".cabal/packages/hackage.haskell.org/01-index.tar"
+- parsing cabal details using [[https://hackage.haskell.org/package/flatparse-0.2.2.0][flatparse]]
+- creating dependency charts and graphing them with graphviz via dotparse and chart-svg.
 
-Inspired by [[https://dev.to/viglioni/creating-haskell-notebooks-with-org-mode-4h7][Creating Haskell notebooks with org-mode - DEV Community]]
-
-
-* ToDo chart-hackage cleanup
-
-* babel
+* code
 
 ** setup
 
-It's all pretty fragile. ob-haskell creates an ~inf-haskell~ buffer which is not the modern Haskell repl. The prompt has to end with ~> ~.
-
 #+begin_src haskell
 :set -XOverloadedStrings
 :set -Wno-type-defaults
 :set prompt "> "
+putStrLn "ok"
 #+end_src
 
-** single session
-
-Once this is created, you can check in the ~*haskell*~ buffer to see input and output. The default is a single session.
+#+RESULTS:
+: > > ok
 
 #+begin_src haskell
-x = [0..4]
+:r
+import qualified Streamly.Prelude as S
+import qualified Streamly.Internal.Data.Unfold as Unfold
+import Data.Function
+import Streamly.External.Archive
+import Data.Either
+import qualified Data.ByteString.Char8 as C
+import Data.Bifunctor
+import qualified Data.Map.Strict as Map
+import DotParse
+import Algebra.Graph
+import qualified Algebra.Graph.ToGraph as ToGraph
+import Data.Foldable
+import Chart
+import Optics.Core
+putStrLn "ok"
+#+end_src
+
+#+RESULTS:
+: > > > > > > > > > > > > ok
+
+Run this to re-establish the basic state in *haskell*
+
+#+begin_src haskell :results output
+vlibs <- validLatestLibs
+deps = fmap (fromRight undefined . parseDeps . mconcat . mconcat . rawBuildDeps . snd) $ Map.delete "acme-everything" vlibs
+bdnames <- fmap (fmap fst) $ fmap Map.toList $ S.fold count $ S.concatMap S.fromList $ S.fromList $ fmap snd $ Map.toList deps
+depsExclude = filter (not . (`elem` (Map.keys vlibs))) bdnames
+vdeps = Map.filter (not . null) $ fmap (filter (not . (`elem` depsExclude))) deps
+depG = stars (Map.toList vdeps)
+#+end_src
+
+** count
+
+archive is located at "~/.cabal/packages/hackage.haskell.org/01-index.tar"
+
+#+begin_src haskell
+S.unfold unf undefined & S.fold headerCount
+#+end_src
+
+#+RESULTS:
+: 288831
+
+Checks that all pathNames exist, all file types are regular and there are no utf8 issues with pathNames
+
+** packages
+
+*** weird names
+
+#+begin_src haskell :results output
+S.toList $ S.filter ((/= Just (Just FileTypeRegular)) . fmap fileType) $ S.take 10 $ fmap fst $ packages (Unfold.take 10000000 unf)
+
+S.toList $ S.filter (\x -> fmap pathName x /= fmap pathNameUtf8 x) $ S.take 10 $ fmap fst $ packages (Unfold.take 10000000 unf)
+
+S.toList $ S.filter (\x -> fmap pathName x == Nothing) $ S.take 10 $ fmap fst $ packages (Unfold.take 10000000 unf)
+#+end_src
+
+#+RESULTS:
+: []
+: > []
+: > []
+
+
+Given this all clear, pathName can be used as the main package identifier.
+
+*** empty content
+
+#+begin_src haskell
+fmap fst <$> (S.toList $ S.take 10 $ packages unf)
+#+end_src
+
+#+RESULTS:
+| iconv/0.2/iconv.cabal | Crypto/3.0.3/Crypto.cabal | HDBC/1.0.1/HDBC.cabal | HDBC-odbc/1.0.1.0/HDBC-odbc.cabal | HDBC-postgresql/1.0.1.0/HDBC-postgresql.cabal | HDBC-sqlite3/1.0.1.0/HDBC-sqlite3.cabal | darcs-graph/0.1/darcs-graph.cabal | hask-home/2006.3.23/hask-home.cabal | hmp3/1.1/hmp3.cabal | lambdabot/4.0/lambdabot.cabal |
+
+#+begin_src haskell
+S.length $ S.filter ((=="") . snd) $ packages unf
+#+end_src
+
+#+RESULTS:
+: 42
+
+All of these no content results are preferred-version package identifiers.
+
+*** types of packages
+
+package path names are either preferred-versions, .cabal or package.json
+
+#+begin_src haskell
+S.length $ fmap fst $ S.filter (not . (\x -> B.isSuffixOf "preferred-versions" x || B.isSuffixOf ".cabal" x || B.isSuffixOf "package.json" x) . fst) $ packages (Unfold.take 10000000 unf)
+#+end_src
+
+#+RESULTS:
+: 0
+
+Reifying this in NameType:
+
+#+begin_src haskell
+S.fold count $ fmap (bimap toNameType (=="")) $ packages (Unfold.take 10000000 unf)
+#+end_src
+
+#+RESULTS:
+: fromList [((CabalName,False),159469),((PreferredVersions,False),2845),((PreferredVersions,True),42),((PackageJson,False),126475)]
+
+**** preferred-versions
+
+#+begin_src haskell
+S.length $ S.filter ((\x -> B.isSuffixOf "preferred-versions" x) . fst) $ packages unf
+#+end_src
+
+#+RESULTS:
+: 2887
+
+#+begin_src haskell
+S.length $ S.filter (\(x,c) -> B.isSuffixOf "preferred-versions" x && c == "") $ packages unf
+#+end_src
+
+#+RESULTS:
+: 42
+
+#+begin_src haskell :results output
+S.toList $ S.take 10 $ S.filter (\(x,c) -> B.isSuffixOf "preferred-versions" x && c /= "") $ packages unf
+#+end_src
+
+#+RESULTS:
+: [("ADPfusion/preferred-versions","ADPfusion <0.4.0.0 || >0.4.0.0"),("AesonBson/preferred-versions","AesonBson <0.2.0 || >0.2.0 && <0.2.1 || >0.2.1"),("BiobaseXNA/preferred-versions","BiobaseXNA <0.9.1.0 || >0.9.1.0"),("BufferedSocket/preferred-versions","BufferedSocket <0.1.0.0 || >0.1.0.0 && <0.1.1.0 || >0.1.1.0"),("FTGL/preferred-versions","FTGL <1.4 || >1.4"),("HSlippyMap/preferred-versions","HSlippyMap <0.1.0.0 || >0.1.0.0 && <1.0 || >1.0 && <1.2 || >1.2 && <1.4 || >1.4 && <1.6 || >1.6 && <1.8 || >1.8 && <2.0 || >2.0 && <2.1 || >2.1"),("HaTeX-qq/preferred-versions","HaTeX-qq <0.0.0.0 || >0.0.0.0 && <0.0.1.0 || >0.0.1.0"),("Hs2lib/preferred-versions","Hs2lib <0.5.7 || >0.5.7 && <0.5.8 || >0.5.8"),("Hungarian-Munkres/preferred-versions","Hungarian-Munkres <0.1.0 || >0.1.0 && <0.1.1 || >0.1.1 && <0.1.2 || >0.1.2"),("IPv6Addr/preferred-versions","IPv6Addr >=0.5")]
+
+**** package-json
+
+https://github.com/haskell/hackage-security/blob/master/README.md
+
+#+begin_src haskell
+S.length $ S.filter ((\x -> B.isSuffixOf "package.json" x) . fst) $ packages (Unfold.take 10000000 unf)
+#+end_src
+
+#+RESULTS:
+: 126475
+
+
+#+begin_src haskell
+S.toList $ S.take 30 $ S.filter ((\x -> B.isSuffixOf "package.json" x) . fst) $ packages (Unfold.take 10000000 unf)
+#+end_src
+
+#+RESULTS:
+| Chart-cairo/1.0/package.json                       | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/Chart-cairo-1.0.tar.gz":{"hashes":{"md5":"673158c2dedfb688291096fc818c5d5e","sha256":"a55c585310e65cf609c0de925d8c3616b1d8b74e803e149a184d979db086b87c"},"length":4510}},"version":0}}                       |
+| DistanceUnits/0.1.0.0/package.json                 | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/DistanceUnits-0.1.0.0.tar.gz":{"hashes":{"md5":"66fc96c89eaf434673f6cb8185f7b0d5","sha256":"6f82154cff8a245aeb2baee32276598bba95adca2220b36bafc37aa04d7b0f64"},"length":4473}},"version":0}}                 |
+| Capabilities/0.1.0.0/package.json                  | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/Capabilities-0.1.0.0.tar.gz":{"hashes":{"md5":"d6be3b7250cf729a281918ebb769fa33","sha256":"0434c5659c3f893942159bde4bd760089e81a3942f799010d04bd5bee0f6a559"},"length":6255}},"version":0}}                  |
+| Chart-diagrams/1.0/package.json                    | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/Chart-diagrams-1.0.tar.gz":{"hashes":{"md5":"59bc95baee048eb74a1d104750c88e2d","sha256":"41beed8d265210f9ecd7488dfa83b76b203522d45425fd84b5943ebf84af17b5"},"length":1606758}},"version":0}}                 |
+| DistanceUnits/0.1.0.1/package.json                 | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/DistanceUnits-0.1.0.1.tar.gz":{"hashes":{"md5":"aa4429db5dc0bdcd199d5642c9a3a293","sha256":"5aad6450a1dd79f783944269fd4c759f249c9cd3883e45134c7f586c09ce4653"},"length":4482}},"version":0}}                 |
+| DrIFT/2.4.0/package.json                           | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/DrIFT-2.4.0.tar.gz":{"hashes":{"md5":"7bd8d0df1d1d873767859147433dced7","sha256":"74310cf5bc430784d7f07b8fc68ea2879ac47545f453cc8bcc0febe1f1302578"},"length":69592}},"version":0}}                          |
+| DrIFT/2.4.1/package.json                           | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/DrIFT-2.4.1.tar.gz":{"hashes":{"md5":"3f15f4104e640cf02bd5c357485fe25c","sha256":"02788c3aa23bf84fd0cd96e7ee2cadf957cb5c252ed1fc659f580eaadf73487e"},"length":69690}},"version":0}}                          |
+| HSmarty/0.1.0.0/package.json                       | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/HSmarty-0.1.0.0.tar.gz":{"hashes":{"md5":"acf52e335402fd4aed39308ad398d7d7","sha256":"68bbd9408c2edfdf98618df7700478acd050e319c888dd81cccf0e681260b7f1"},"length":3517}},"version":0}}                       |
+| HaskellNet-SSL/0.1.0.0/package.json                | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/HaskellNet-SSL-0.1.0.0.tar.gz":{"hashes":{"md5":"a9df63b26169cdd4ce924918d7cc5f49","sha256":"6c786a4683b63281cdd55db48e9391e9a78e755cbbf1733681e9bf6b6e8f1552"},"length":3207}},"version":0}}                |
+| HaskellNet-SSL/0.1.1.0/package.json                | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/HaskellNet-SSL-0.1.1.0.tar.gz":{"hashes":{"md5":"2c808512a103d7d8da261a17f09805a9","sha256":"8bcfae3722a0b9c89d26193bf494c0fe284eeacc9e927704dd120531145164e4"},"length":3329}},"version":0}}                |
+| HaskellNet-SSL/0.1.1.1/package.json                | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/HaskellNet-SSL-0.1.1.1.tar.gz":{"hashes":{"md5":"e3cb6776f7fe8ef623548c0a9792134e","sha256":"c3b47386c309707697cc7972c62b772aa98dce07e07a997032a99709ea7202c7"},"length":3347}},"version":0}}                |
+| Konf/0.1.0.0/package.json                          | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/Konf-0.1.0.0.tar.gz":{"hashes":{"md5":"42c46abfc29c5d6b97be21d1a4e7e5a5","sha256":"2623d1b198ae9e56ba3ea50ab7dfe876b73ff288b44fa54292272cc4d5ea7284"},"length":3534}},"version":0}}                          |
+| LogicGrowsOnTrees-MPI/1.0.0/package.json           | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/LogicGrowsOnTrees-MPI-1.0.0.tar.gz":{"hashes":{"md5":"e9501c67ff2f41711cb523cf9a0c6754","sha256":"57b8d96ec16c958941f3a98f6a488e7215a06a37fb6925fc19aae49d40469b44"},"length":8722}},"version":0}}           |
+| LogicGrowsOnTrees-network/1.0.0.0.1/package.json   | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/LogicGrowsOnTrees-network-1.0.0.0.1.tar.gz":{"hashes":{"md5":"78ffa581f335eeb885cc30ffa81cb240","sha256":"607dbccb36b2d551e83c33f181c6ccd5ce7c2e74829d97252d44c74e329ac39b"},"length":10567}},"version":0}}  |
+| LogicGrowsOnTrees-network/1.0.0/package.json       | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/LogicGrowsOnTrees-network-1.0.0.tar.gz":{"hashes":{"md5":"d1cf7aa03d97a4953f405d634171fb1a","sha256":"ffdbd3350d2a3c340dd8e18eafb4d672c5fb3061b5f1631813fdde794c02fa0c"},"length":10538}},"version":0}}      |
+| LogicGrowsOnTrees-processes/1.0.0.0.1/package.json | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/LogicGrowsOnTrees-processes-1.0.0.0.1.tar.gz":{"hashes":{"md5":"6e9e2bcd017940e948ec269af3a46b63","sha256":"dceac28fba65309af5ea4a8cb179c7aaf484985cfcfff5a9e9bd6afa60db3bf9"},"length":7709}},"version":0}} |
+| LogicGrowsOnTrees-processes/1.0.0/package.json     | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/LogicGrowsOnTrees-processes-1.0.0.tar.gz":{"hashes":{"md5":"b53a1c76967774c5847f02c19a941ec4","sha256":"9d8a924bc2ec02b9202306db364074e20b76558ed534c5a0fbdc0e589438ebcd"},"length":7688}},"version":0}}     |
+| LogicGrowsOnTrees/1.0.0.0.1/package.json           | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/LogicGrowsOnTrees-1.0.0.0.1.tar.gz":{"hashes":{"md5":"37494236b1bd1e3683134d8ca4bae458","sha256":"3025ed109bdd074ad48602890a6cd97748c74ab230cd6f91b2d8c24aa91f0dde"},"length":112058}},"version":0}}         |
+| LogicGrowsOnTrees/1.0.0/package.json               | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/LogicGrowsOnTrees-1.0.0.tar.gz":{"hashes":{"md5":"21b93f365410f13bd3b650c363217f34","sha256":"bfac337e25df349d832809318972a01344dc3594cb8a4dbc3a1b6c5f90218572"},"length":112080}},"version":0}}             |
+| MHask/0.1.0.0/package.json                         | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/MHask-0.1.0.0.tar.gz":{"hashes":{"md5":"8645ff9f894c7c357358b2926d166e41","sha256":"aeca6bed548292e3a2b0b0bbf94e36c37a29f3cbf9566dcbafe06bd74a17490e"},"length":3525}},"version":0}}                         |
+| MHask/0.2.0.0/package.json                         | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/MHask-0.2.0.0.tar.gz":{"hashes":{"md5":"4612b7fcba615c596335ddce4e255739","sha256":"d0e5d787bdaf7c25508341995e8e01cf8154b6f9d8b9bfe3bac81ab7d491b7fb"},"length":4332}},"version":0}}                         |
+| MHask/0.3.0.0/package.json                         | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/MHask-0.3.0.0.tar.gz":{"hashes":{"md5":"0f376a45bd8d2497afc5af3c265a2804","sha256":"6a67398197c1958f06bbb11a3dcd230f29a0ae31191f1a3676fe46a84848925a"},"length":4539}},"version":0}}                         |
+| Rlang-QQ/0.0.0.0/package.json                      | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/Rlang-QQ-0.0.0.0.tar.gz":{"hashes":{"md5":"c69846a339763140e4d1fc9d9d25a660","sha256":"7d603c3a4615de3ad0fafc5fa47939100257562de14cc8e1daae41b76a22e7a9"},"length":4250}},"version":0}}                      |
+| Rlang-QQ/0.0.0.1/package.json                      | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/Rlang-QQ-0.0.0.1.tar.gz":{"hashes":{"md5":"1de7202c06cf1b214e03a8009e4fe658","sha256":"afa7cd77dec1a5dea108fb37c8570e1278bd42e25838c0b04777f1475be0dc1c"},"length":4247}},"version":0}}                      |
+| Rlang-QQ/0.0.0.2/package.json                      | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/Rlang-QQ-0.0.0.2.tar.gz":{"hashes":{"md5":"e3c95eca2e49d4b37cb24cd1192bc73a","sha256":"e1f65bbfee89ad2ff3eaeef5d4710fe47481775986101feb77287512b9e95804"},"length":4278}},"version":0}}                      |
+| SimpleGL/0.9.1/package.json                        | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/SimpleGL-0.9.1.tar.gz":{"hashes":{"md5":"4693193a43113bd2b259e164f82f71a9","sha256":"45e4104a0061c9d416563209e080c45291f402b0e8298ab8a08b1e5c5bb8e339"},"length":4982}},"version":0}}                        |
+| SimpleGL/0.9.2/package.json                        | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/SimpleGL-0.9.2.tar.gz":{"hashes":{"md5":"2b9325f51b1fc12d5bf4fa78d65c33b8","sha256":"41c37f5177c1f5bb6b7db057ffe7e1b5e33eb8b9d3837f86d6ef9ce74a4200d5"},"length":5160}},"version":0}}                        |
+| SimpleGL/0.9.3/package.json                        | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/SimpleGL-0.9.3.tar.gz":{"hashes":{"md5":"6613ee2f6394c63e77b28f870c4f3b0e","sha256":"19968a2beff81a94fb5eaf044ad94d425149ebdce5833a0a637ae3280b26c730"},"length":5156}},"version":0}}                        |
+| SimpleH/0.9.1/package.json                         | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/SimpleH-0.9.1.tar.gz":{"hashes":{"md5":"6a8ce6cfcfdcfb640529cb2e8a1fb033","sha256":"4399115974d082d1cbeb82bca4d08aef9ad644ba9b85d64136bb316e641fbce2"},"length":19395}},"version":0}}                        |
+| SimpleH/0.9/package.json                           | {"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/SimpleH-0.9.tar.gz":{"hashes":{"md5":"795e8f1ddb1ce53244daea81195aa81f","sha256":"ba0ca848a66897bea71bbd22adb8ce30474e15d5316d1f36ad616499e7638a82"},"length":18368}},"version":0}}                          |
+
+
+**** .cabal
+
+#+begin_src haskell
+S.length $ S.filter ((\x -> B.isSuffixOf ".cabal" x) . fst) $ packages (Unfold.take 10000000 unf)
+#+end_src
+
+#+RESULTS:
+: 159469
+
+#+begin_src haskell
+fmap fst <$> (S.toList $ S.take 10 $ S.filter ((\x -> B.isSuffixOf ".cabal" x) . fst) $ packages (Unfold.take 10000000 unf))
+#+end_src
+
+#+RESULTS:
+| iconv/0.2/iconv.cabal | Crypto/3.0.3/Crypto.cabal | HDBC/1.0.1/HDBC.cabal | HDBC-odbc/1.0.1.0/HDBC-odbc.cabal | HDBC-postgresql/1.0.1.0/HDBC-postgresql.cabal | HDBC-sqlite3/1.0.1.0/HDBC-sqlite3.cabal | darcs-graph/0.1/darcs-graph.cabal | hask-home/2006.3.23/hask-home.cabal | hmp3/1.1/hmp3.cabal | lambdabot/4.0/lambdabot.cabal | parsedate/2006.6.4/parsedate.cabal | plugins/1.0/plugins.cabal | zlib/0.2/zlib.cabal | bzlib/0.2/bzlib.cabal | libxml/0.1/libxml.cabal | xslt/0.1/xslt.cabal | hxweb/0.1/hxweb.cabal | HGL/3.1/HGL.cabal | GLUT/2.0/GLUT.cabal | HUnit/1.1/HUnit.cabal | ALUT/2.0/ALUT.cabal | OpenAL/1.3/OpenAL.cabal | QuickCheck/1.0/QuickCheck.cabal | OpenGL/2.1/OpenGL.cabal | mtl/1.0/mtl.cabal | Win32/2.1/Win32.cabal | fgl/5.3/fgl.cabal | html/1.0/html.cabal | network/2.0/network.cabal | X11/1.2/X11.cabal | haskell-src/1.0/haskell-src.cabal | unix/2.0/unix.cabal | time/1.0/time.cabal | arrows/0.2/arrows.cabal | parsec/2.0/parsec.cabal | haskell98/1.0/haskell98.cabal | stm/2.1/stm.cabal | Cabal/1.1.6/Cabal.cabal | HaXml/1.13.2/HaXml.cabal | cpphs/1.3/cpphs.cabal | haddock/0.8/haddock.cabal | hsc2hs/0.67.20061107/hsc2hs.cabal | hnop/0.1/hnop.cabal | regex-base/0.71/regex-base.cabal | regex-compat/0.71/regex-compat.cabal | regex-posix/0.71/regex-posix.cabal | monadLib/3.0.0/monadLib.cabal | happy/1.16/happy.cabal | alex/2.1.0/alex.cabal | zlib/0.3/zlib.cabal | bzlib/0.3/bzlib.cabal | Safe/0.1/Safe.cabal | DeepArrow/0.0/DeepArrow.cabal | phooey/0.1/phooey.cabal | TV/0.0/TV.cabal | compression/0.1/compression.cabal | binary/0.2/binary.cabal | hscolour/1.6/hscolour.cabal | hpaste/0.3/hpaste.cabal | loch/0.2/loch.cabal | darcs-graph/0.2/darcs-graph.cabal | dlist/0.2/dlist.cabal | pqc/0.1/pqc.cabal | hmp3/1.2/hmp3.cabal | polyparse/1.0/polyparse.cabal | hinotify/0.1/hinotify.cabal | lhs2tex/1.12/lhs2tex.cabal | hxt/7.1/hxt.cabal | cabal-upload/0.1/cabal-upload.cabal | HPDF/0.3/HPDF.cabal | TV/0.1.1/TV.cabal | phooey/0.2.1/phooey.cabal | DeepArrow/0.0.1/DeepArrow.cabal | gd/3000.0.0/gd.cabal | xhtml/3000.0.0/xhtml.cabal | haxr/3000.0.0/haxr.cabal | haxr-th/3000.0.0/haxr-th.cabal | HTTP/3000.0.0/HTTP.cabal | cgi/3000.0.0/cgi.cabal | cgi-undecidable/3000.0.0/cgi-undecidable.cabal | exif/3000.0.0/exif.cabal | fastcgi/3000.0.0/fastcgi.cabal | rss/3000.0.0/rss.cabal | hmarkup/3000.0.0/hmarkup.cabal | cgi/3001.0.0/cgi.cabal | xhtml/3000.0.1/xhtml.cabal | cabal-upload/0.2/cabal-upload.cabal | cgi/3001.1.0/cgi.cabal | TV/0.2/TV.cabal | GuiTV/0.2/GuiTV.cabal | urlcheck/0.1/urlcheck.cabal | rdtsc/1.1.1/rdtsc.cabal | lambdaFeed/0.3.1/lambdaFeed.cabal | fenfire/0.1/fenfire.cabal | hjs/0.1/hjs.cabal | vty/3.0.0/vty.cabal | Encode/0.7/Encode.cabal | base64-string/0.1/base64-string.cabal | Shellac/0.9/Shellac.cabal | Shellac-readline/0.9/Shellac-readline.cabal |
+
+*** .cabal paths
+
+So we have about 160k cabal files to R&D ...
+
+malformed version number parses
+
+#+begin_src haskell :results output
+
+mErrs <- S.fold (collect fst snd) $ S.filter (isLeft . snd) $ fmap (second (parseVersion . C.pack)) $ fmap (fromRight undefined) $ S.filter isRight $ fmap (parsePath . fst) $ S.filter ((==CabalName) . toNameType . fst) (packages (Unfold.take 10000000 unf))
+
+length mErrs
+
+#+end_src
+
+#+RESULTS:
+: <interactive>:109:1: warning: [-Wname-shadowing]
+:     This binding for ‘mErrs’ shadows the existing binding
+:       defined at <interactive>:97:1
+: > 0
+
+
+Total number of named packages
+
+#+begin_src haskell
+n <- S.fold (collect fst snd) $ fmap (second (fromRight undefined)) $ S.filter (isRight . snd) $ fmap (second (parseVersion . C.pack)) $ fmap (fromRight undefined) $ S.filter isRight $ fmap (parsePath . fst) $ S.filter ((==CabalName) . toNameType . fst) (packages (Unfold.take 10000000 unf))
+
+length n
+#+end_src
+
+#+RESULTS:
+: > 16511
+
+#+begin_src haskell :results output
+ sum $ Map.elems $ length <$> n
+#+end_src
+
+#+RESULTS:
+: 159469
+
+Average number of versions:
+
+#+begin_src haskell :results output
+ fromIntegral (sum $ Map.elems $ length <$> n) / fromIntegral (length n)
+#+end_src
+
+#+RESULTS:
+: 9.658348979468233
+
+#+begin_src haskell
+latest = Map.map maximum n
+length $ Map.toList $ Map.filter (==[]) latest
+#+end_src
+
+#+RESULTS:
+: 0
+
+** latest version files
+
+#+begin_src haskell
+lcf <- latestCabalFiles
+length $ Map.toList lcf
+#+end_src
+
+#+RESULTS:
+: 16511
+
+** fields
+
+#+begin_src haskell
+fmap (\x -> C.pack (fst x) <> "-" <> toVer (fst (snd x))) $ Map.toList $ Map.filter (isLeft . readFields . snd) lcf
+#+end_src
+
+#+RESULTS:
+| DSTM-0.1.2 | control-monad-exception-mtl-0.10.3 | ds-kanren-0.2.0.1 | metric-0.2.0 | phasechange-0.1 | smartword-0.0.0.5 |
+
+** field collections
+
+valid cabal files with ok parsing of all fields:
+
+#+begin_src haskell
+vlcs <- validLatestCabals
+length vlcs
+#+end_src
+
+#+RESULTS:
+: 16505
+
+*** top fields
+
+#+begin_src haskell
+import Data.Ord
+fmap (take 10 . List.sortOn (Down . snd) . Map.toList) $ S.fold count $ S.fromList $ fmap names $ mconcat $ fmap snd $ Map.toList $ fmap snd vlcs
+#+end_src
+
+#+RESULTS:
+| license       | 16509 |
+| name          | 16506 |
+| version       | 16505 |
+| maintainer    | 16431 |
+| synopsis      | 16336 |
+| cabal-version | 16240 |
+| category      | 16133 |
+| build-type    | 16097 |
+| author        | 16023 |
+| license-file  | 15883 |
+
+
+*** authors
+
+#+begin_src haskell
+fmap (take 10 . List.sortOn (Down . snd) . Map.toList) $ S.fold count $ S.fromList $ mconcat $ fmap authors $ fmap snd $ Map.toList $ fmap snd vlcs
+#+end_src
+
+#+RESULTS:
+| Brendan Hay                                        | 333 |
+| Nikita Volkov <nikita.y.volkov@mail.ru>            | 145 |
+| Tom Sydney Kerckhove                               | 108 |
+| Henning Thielemann <haskell@henning-thielemann.de> | 103 |
+| Andrew Martin                                      |  99 |
+| Edward A. Kmett                                    |  98 |
+| Michael Snoyman                                    |  88 |
+| OleksandrZhabenko                                  |  82 |
+| M Farkas-Dyck                                      |  78 |
+| Vanessa McHale                                     |  78 |
+
+** libraries
+
+not libraries
+
+#+begin_src haskell
+Map.size $ Map.filter ((0==) . length) $ fmap (catMaybes . fmap (sec "library") . snd) vlcs
+#+end_src
+
+#+RESULTS:
+: 1725
+
+multiple libraries
+
+#+begin_src haskell
+Map.size $ Map.filter ((>1) . length) $ fmap (catMaybes . fmap (sec "library") . snd) vlcs
+#+end_src
+
+#+RESULTS:
+: 66
+
+Multiple libraries are usually "internal" libraries that can only be used inside the cabal file.
+
+#+begin_src haskell :results output
+take 10 $ Map.toList $ Map.filter (\x -> x/=[[]] && x/=[] && listToMaybe x /= Just []) $ fmap (fmap (fmap secName) . fmap fst . catMaybes . fmap (sec "library") . snd) vlcs
+#+end_src
+
+#+RESULTS:
+: [("LiterateMarkdown",[[("name","converter")]]),("attoparsec",[[("name","attoparsec-internal")],[]]),("buffet",[[("name","buffet-internal")]]),("cabal-fmt",[[("name","cabal-fmt-internal")]]),("cuckoo",[[("name","random-internal")],[]]),("dhrun",[[("name","dhrun-lib")]]),("dns",[[("name","dns-internal")],[]]),("escoger",[[("name","escoger-lib")]]),("ghc-plugs-out",[[("name","no-op-plugin")],[("name","undefined-init-plugin")],[("name","undefined-solve-plugin")],[("name","undefined-stop-plugin")],[("name","call-count-plugin")]]),("haskell-ci",[[("name","haskell-ci-internal")]])]
+
+
+valid library cabals
+
+#+begin_src haskell
+vlibs <- validLatestLIbs
+Map.size vlibs
+#+end_src
+
+#+RESULTS:
+: 14780
+
+common stanzas
+
+#+begin_src haskell
+length $ Map.toList $ Map.filter (/=[]) $ fmap (catMaybes . fmap (sec "common")) $ fmap snd vlcs
+#+end_src
+
+#+RESULTS:
+: 568
+
+** dependencies
+
+
+
+
+packages with large numbers of dependencies
+
+#+begin_src haskell :results output
+take 10 $ List.sortOn (Down . snd) $ Map.toList $ fmap (sum . fmap length) $ fmap (fmap (vs "build-depends")) $ Map.filter (/=[]) $ fmap (fmap snd . catMaybes . fmap (sec "library") . snd) vlcs
+#+end_src
+
+#+RESULTS:
+: [("acme-everything",7533),("yesod-platform",132),("planet-mitchell",109),("sockets",83),("ghcide",75),("pandoc",70),("sprinkles",67),("too-many-cells",67),("pantry-tmp",64),("purescript",62)]
+
+
+Total number of build dependencies in library stanzas and in common stanzas:
+
+#+begin_src haskell :results output
+sum $ fmap snd $ Map.toList $ fmap (sum . fmap length) $ fmap (fmap (vs "build-depends")) $ Map.filter (/=[]) $ fmap (fmap snd . catMaybes . fmap (sec "library") . snd) vlcs
+
+sum $ fmap snd $ Map.toList $ fmap (sum . fmap length) $ fmap (fmap (vs "build-depends")) $ Map.filter (/=[]) $ fmap (fmap snd . catMaybes . fmap (sec "common") . snd) vlcs
+#+end_src
+
+#+RESULTS:
+: 105233
+: > 3544
+
+
+unique dependencies
+
+#+begin_src haskell
+Map.size $ fmap (fmap mconcat) $ Map.filter (/=[]) $ fmap (rawBuildDeps . snd) $ Map.delete "acme-everything" vlcs
+#+end_src
+
+#+RESULTS:
+: 14779
+
+#+begin_src haskell
+take 1 $ Map.toList $ fmap (fmap mconcat) $ Map.filter (/=[]) $ fmap (rawBuildDeps . snd) $ Map.delete "acme-everything" vlcs
+#+end_src
+
+#+RESULTS:
+| 2captcha | (aeson >=1.5.6.0 && <1.6,base >=4.7 && <5,bytestring >=0.10.12.0 && <0.11,clock >=0.8.2 && <0.9,exceptions >=0.10.4 && <0.11,http-client >=0.6.4.1 && <0.7,lens >=4.19.2 && <4.20,lens-aeson >=1.1.1 && <1.2,parsec >=3.1.14.0 && <3.2,text >=1.2.4.1 && <1.3,wreq >=0.5.3.3 && <0.6 ) |
+
+lex check:
+
+#+begin_src haskell
+S.fold count $ S.concatMap S.fromList $ fmap C.unpack $ S.concatMap S.fromList $ S.fromList $ fmap snd $ Map.toList $ fmap (fmap mconcat) $ Map.filter (/=[]) $ fmap (rawBuildDeps . snd) $ Map.delete "acme-everything" vlcs
+#+end_src
+
+#+RESULTS:
+: fromList [('\t',42),(' ',572471),('&',86160),('(',486),(')',486),('*',5969),(',',92554),('-',32183),('.',140854),('0',77745),('1',63104),('2',32240),('3',20269),('4',29110),('5',22316),('6',9901),('7',9590),('8',6678),('9',6284),('<',45145),('=',78780),('>',65175),('A',259),('B',234),('C',1113),('D',474),('E',75),('F',143),('G',334),('H',809),('I',103),('J',112),('K',15),('L',502),('M',399),('N',79),('O',280),('P',422),('Q',602),('R',240),('S',544),('T',524),('U',200),('V',75),('W',73),('X',92),('Y',24),('Z',18),('^',2855),('a',73691),('b',29688),('c',35787),('d',20249),('e',109010),('f',12413),('g',16508),('h',16656),('i',52533),('j',527),('k',7435),('l',34131),('m',26121),('n',54342),('o',47497),('p',28317),('q',2380),('r',67213),('s',78990),('t',90097),('u',14024),('v',6600),('w',3782),('x',10090),('y',17960),('z',1406),('{',38),('|',1936),('}',38)]
+
+** deps
+
+#+begin_src haskell :results output
+deps = fmap (fromRight undefined . parseDeps . mconcat . mconcat . rawBuildDeps . snd) $ Map.delete "acme-everything" vlibs
+Map.size deps
+sum $ Map.elems $ fmap length deps
+#+end_src
+
+#+RESULTS:
+:
+: 14779
+: 106678
+
+#+begin_src haskell :results output
+take 3 $ Map.toList deps
+#+end_src
+
+#+RESULTS:
+: [("2captcha",["aeson","base","bytestring","clock","exceptions","http-client","lens","lens-aeson","parsec","text","wreq"]),("3dmodels",["base","attoparsec","bytestring","linear","packer"]),("AAI",["base"])]
+
+
+most dependencies for a package
+
+#+begin_src haskell
+take 10 $ List.sortOn (Down . snd) $ fmap (second length) $ Map.toList deps
+#+end_src
+
+#+RESULTS:
+| yesod-platform  | 132 |
+| planet-mitchell | 109 |
+| raaz            | 104 |
+| sockets         |  82 |
+| ghcide          |  75 |
+| pandoc          |  70 |
+| sprinkles       |  67 |
+| too-many-cells  |  67 |
+| pantry-tmp      |  64 |
+| purescript      |  62 |
+
+
+dependees
+
+#+begin_src haskell
+fmap (take 20) $ fmap (List.sortOn (Down . snd)) $ fmap Map.toList $ S.fold count $ S.concatMap S.fromList $ S.fromList $ fmap snd $ Map.toList deps
+#+end_src
+
+#+RESULTS:
+| base                 | 14221 |
+| bytestring           |  5206 |
+| text                 |  4743 |
+| containers           |  4532 |
+| mtl                  |  3378 |
+| transformers         |  2991 |
+| aeson                |  1927 |
+| time                 |  1866 |
+| vector               |  1740 |
+| directory            |  1556 |
+| filepath             |  1476 |
+| template-haskell     |  1391 |
+| unordered-containers |  1349 |
+| deepseq              |  1193 |
+| lens                 |  1150 |
+| binary               |   910 |
+| hashable             |   890 |
+| array                |   860 |
+| process              |   828 |
+| exceptions           |   810 |
+
+
+All the dependees found:
+
+#+begin_src haskell
+bdnames <- fmap (fmap fst) $ fmap Map.toList $ S.fold count $ S.concatMap S.fromList $ S.fromList $ fmap snd $ Map.toList deps
+
+length bdnames
+#+end_src
+
+#+RESULTS:
+: > 5628
+
+
+
+** dependency name errors
+
+dependees not in the index:
+
+#+begin_src haskell :results output
+length $ filter (not . (`elem` (Map.keys vlibs))) bdnames
+
+take 10 $ filter (not . (`elem` (Map.keys vlibs))) bdnames
+
+#+end_src
+
+#+RESULTS:
+: 233
+: > ["Codec-Compression-LZF","Consumer","DOM","DebugTraceHelpers","FieldTrip","FindBin","HJavaScript","HTTP-Simple","Imlib","LRU"]
+
+excluding these:
+
+
+#+begin_src haskell :results output
+depsExclude = filter (not . (`elem` (Map.keys vlibs))) bdnames
+vdeps = fmap (filter (not . (`elem` depsExclude))) deps
+Map.size vdeps
+sum $ fmap snd $ Map.toList $ fmap length vdeps
+#+end_src
+
+#+RESULTS:
+: <interactive>:413:1: warning: [-Wname-shadowing]
+:     This binding for ‘depsExclude’ shadows the existing binding
+:       defined at <interactive>:409:1
+: <interactive>:414:1: warning: [-Wname-shadowing]
+:     This binding for ‘vdeps’ shadows the existing binding
+:       defined at <interactive>:410:1
+: 14779
+: 106238
+
+*** potential error sources
+
+- [X] error 1 - commas can be inside braces
+
+- [ ] error 2 - plain old dodgy depends
+  acme-everything, cabal, deprecated packages
+
+- [ ] error 3 - multiple build-depends in one stanza
+
+- [ ] error 4 - cpp & conditionals
+
+- [ ] error 5 - packages not on Hackage
+
+   cardano
+   "This library requires quite a few exotic dependencies from the cardano realm which aren't necessarily on hackage nor stackage. The dependencies are listed in stack.yaml, make sure to also include those for importing cardano-transactions." ~ https://raw.githubusercontent.com/input-output-hk/cardano-haskell/d80bdbaaef560b8904a828197e3b94e667647749/snapshots/cardano-1.24.0.yaml
+
+- [ ] error 6 - internal library (only available to the main cabal library stanza)
+  yahoo-prices, vector-endian, symantic-parser
+
+Empty lists are mostly due to bad conditional parsing
+
+ #+begin_src haskell
+ Map.size $ Map.filter null deps
+ #+end_src
+
+ #+RESULTS:
+ : 243
+
+** algebraic-graphs
+
+Reproducing data milestones:
+
+#+begin_src haskell :results output
+
+vlibs <- validLatestLibs
+deps = fmap (fromRight undefined . parseDeps . mconcat . mconcat . rawBuildDeps . snd) $ Map.delete "acme-everything" vlibs
+bdnames <- fmap (fmap fst) $ fmap Map.toList $ S.fold count $ S.concatMap S.fromList $ S.fromList $ fmap snd $ Map.toList deps
+depsExclude = filter (not . (`elem` (Map.keys vlibs))) bdnames
+vdeps = Map.filter (not . null) $ fmap (filter (not . (`elem` depsExclude))) deps
+depG = stars (Map.toList vdeps)
 #+end_src
 
 #+RESULTS:
 
-#+begin_src haskell
-x
+#+begin_src haskell :results output
+vertexCount depG
 #+end_src
 
 #+RESULTS:
-| 0 | 1 | 2 | 3 | 4 |
+: 14624
 
-babel feeds the code block in as single lines.
+A few dependencies had no original cabal file of their own.
 
-#+begin_src haskell
-y = [0..4]
-y
+#+begin_src haskell :results output
+edgeCount depG
 #+end_src
 
 #+RESULTS:
-| 0 | 1 | 2 | 3 | 4 |
+: 105693
 
-** multi-line
+** graphs
 
-Multi-line code blocks need ~:{~ ~:}~ wrappers.
-#+begin_src haskell :post org-babel-haskell-formatter(*this*)
-:{
-t1 :: Bool -> Int
-t1 z = case z of
-        True -> 1
-        False -> 0
-:}
-
-t1 True
-#+end_src
-
-#+RESULTS:
-
-~:set +m~ doesn't work and breaks the process.
+text package dependencies
 
 #+begin_src haskell
-:set +m
-f :: Bool -> Int
-f z = case z of
-        True -> [0..4]
-        False -> [1..9]
-#+end_src
+ import Chart
+ import Optics.Core
+ supers = upstreams "text" depG <> Set.singleton "text"
+ superG = induce (`elem` (toList supers)) depG
+ #+end_src
+
+ #+RESULTS:
+ : <interactive>:220:2: warning: [-Wname-shadowing]
+ :     This binding for ‘superG’ shadows the existing binding
+ :       defined at <interactive>:211:2
+
+#+begin_src haskell :file other/textdeps.svg :results output graphics file :exports results
+ baseGraph = defaultGraph & attL NodeType (ID "shape") .~ Just (ID "box") & gattL (ID "rankdir") .~ Just (IDQuoted "BT")
+ g <- processGraph $ toDotGraphWith UnDirected baseGraph (fmap packUTF8 superG)
+ writeChartSvg "other/textdeps.svg" (graphToChart g)
+ #+end_src
+
+ #+RESULTS:
+ [[file:other/textdeps.svg]]
+
+
+mealy package dependencies
 
 #+begin_src haskell
-f False
-#+end_src
+ import Chart
+ import Optics.Core
+ supers = upstreams "mealy" depG <> Set.singleton "mealy"
+ superG = induce (`elem` (toList (Set.delete "base" supers))) depG
 
-#+RESULTS:
-| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
-** org-babel-script-escape bug
+ #+end_src
 
-This:
-
-#+begin_src haskell
-:set -XOverloadedStrings
-:set -Wno-type-defaults
-:set prompt "> "
-#+end_src
-
-gives an error: org-babel-script-escape expects a string
-
-But no error on singles
-
-#+begin_src haskell
-:set -XOverloadedStrings
-#+end_src
-
-#+begin_src haskell
-:set -Wno-type-defaults
-#+end_src
-
-#+RESULTS:
-
-#+begin_src haskell
-:set prompt "> "
-#+end_src
-
-#+RESULTS:
-** formatter
-
-#+name: org-babel-haskell-formatter
-    #+begin_src emacs-lisp :var strr="" :exports code
-      (format "%s"
-              (replace-regexp-in-string
-               (rx line-start
-                   (+ (| alphanumeric blank "." "|" ">")))
-               "" (format "%s" strr)))
-    #+end_src
-
-    #+RESULTS: org-babel-haskell-formatter
-** embedding inline svg
-
-https://emacs.stackexchange.com/questions/29871/how-to-embed-svg-output-of-org-mode-src-block-as-inline-svg-in-html-export
-
-** image test
-
-[[./line.svg]]
+ #+RESULTS:
+ : <interactive>:229:2: warning: [-Wname-shadowing]
+ :     This binding for ‘superG’ shadows the existing binding
+ :       defined at <interactive>:220:2
 
 
-*
+#+begin_src haskell :file other/mealy.svg :results output graphics file :exports results
+ g <- processGraph $ toDotGraphWith UnDirected baseGraph (fmap packUTF8 superG)
+ writeChartSvg "other/mealy.svg" (graphToChart g)
+ #+end_src
 
-** bar.svg
+ #+RESULTS:
+ [[file:other/mealy.svg]]
 
- [[./bar.svg]]
+* reference
 
-
- [[./arc.svg]]
-
-
-[[./arcflags.svg]]
-
-
-
-* packages
+** packages
 
 [[https://hackage.haskell.org/package/tar-0.5.1.1][tar: Reading, writing and manipulating ".tar" archive files.]]
 [[https://hackage.haskell.org/package/tar-conduit][tar-conduit: Extract and create tar files using conduit for streaming]]
 [[https://hackage.haskell.org/package/streamly-0.8.0/docs/Streamly-Prelude.html][Streamly.Prelude]]
 [[https://hackage.haskell.org/package/flatparse-0.2.2.0/docs/FlatParse-Basic.html][FlatParse.Basic]]
+
+** other hackage parsing examples
+https://hackage.haskell.org/package/cabal-install-parsers-0.4.2
+https://github.com/J-mie6/ParsleyHaskell
+https://hackage.haskell.org/package/Cabal-3.6.1.0/docs/Distribution-Parsec.html#t:ParsecParser

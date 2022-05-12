@@ -1,2 +1,11 @@
 packages:
-  chart-hackage.cabal
+  research-hackage.cabal
+  ../dotparse/dotparse.cabal
+
+
+-- source-repository-package
+--   type: git
+--   branch: main
+--   location: https://github.com/tonyday567/dotparse.git
+
+allow-newer: streamly-archive:bytestring

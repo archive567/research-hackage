@@ -1,8 +1,0 @@
-cradle:
-  cabal:
-    - path: "./app/chart-hackage.hs"
-      component: "chart-hackage:exe:chart-hackage"
-    - path: "./src"
-      component: "chart-hackage:lib"
-    - path: "./test/chart-hackage.hs"
-      component: "chart-hackage:test:chart-hackage"
