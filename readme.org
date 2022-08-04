@@ -579,7 +579,31 @@ An (algebraic) graph of dependencies:
 depG = stars (Map.toList vdeps)
 #+end_src
 
+#+begin_src haskell
+:t depG
+#+end_src
+
 #+RESULTS:
+: depG :: Algebra.Graph.Graph String
+
+#+begin_src haskell
+ToGraph.preSet "folds" depG
+#+end_src
+
+#+RESULTS:
+: fromList ["folds-common","mealy","online","proton"]
+
+#+begin_src haskell
+ToGraph.postSet "folds" depG
+#+end_src
+
+#+RESULTS:
+: fromList ["adjunctions","base","bifunctors","comonad","constraints","contravariant","data-reify","distributive","lens","mtl","pointed","profunctors","reflection","semigroupoids","transformers","unordered-containers","vector"]
+
+https://hackage.haskell.org/package/proton
+
+
+
 
 #+begin_src haskell :results output :exports both
 vertexCount depG
@@ -607,6 +631,29 @@ edgeCount depG
 
  #+RESULTS:
  [[file:other/textdeps.svg]]
+
+
+=folds=
+
+#+begin_src haskell
+ supers = upstreams "folds" depG <> Set.singleton "folds"
+ superG = induce (`elem` (toList supers)) depG
+ #+end_src
+
+ #+RESULTS:
+ : <interactive>:38:2: warning: [-Wname-shadowing]
+ :     This binding for ‘superG’ shadows the existing binding
+ :       defined at <interactive>:35:2
+
+
+#+begin_src haskell :file other/foldsdeps.svg :results output graphics file :exports results
+ baseGraph = defaultGraph & attL NodeType (ID "shape") .~ Just (ID "box") & gattL (ID "rankdir") .~ Just (IDQuoted "BT")
+ g <- processGraph $ toDotGraphWith UnDirected baseGraph (fmap packUTF8 superG)
+ writeChartSvg "other/foldsdeps.svg" (graphToChart g)
+ #+end_src
+
+ #+RESULTS:
+ [[file:other/foldsdeps.svg]]
 
 
 =mealy= package dependencies
