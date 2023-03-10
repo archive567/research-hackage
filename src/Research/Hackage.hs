@@ -148,7 +148,7 @@ rollHeader = Fold step initial done
 
 -- Execute the stream, grouping at the headers (the Lefts).
 groupByHeader ::
-  S.IsStream t =>
+  (S.IsStream t) =>
   Unfold IO a (Either Header ByteString) ->
   t IO (Maybe HeaderInfo, Maybe ByteString)
 groupByHeader arc =
@@ -177,7 +177,7 @@ rollName = Fold step initial done
 
 -- | Execute the stream, grouping by pathName.
 groupByPathName ::
-  S.IsStream t =>
+  (S.IsStream t) =>
   Unfold IO a (Either Header ByteString) ->
   t IO (ByteString, ByteString)
 groupByPathName arc =
@@ -185,7 +185,7 @@ groupByPathName arc =
     & S.groupsBy (\e _ -> isRight e) rollName
 
 -- | package stream: tuple is (name, cabal file)
-packageStream :: S.IsStream t => t IO (ByteString, ByteString)
+packageStream :: (S.IsStream t) => t IO (ByteString, ByteString)
 packageStream = groupByPathName (Unfold.take 10000000 archive)
 
 -- | The types of files in the archive.
@@ -297,11 +297,11 @@ notcabal = chainr (:) anyChar (fmap (const []) cabalSuffix)
 -- >>> runParser paths "1/2/3.cabal"
 -- OK ["1","2","3.cabal"] ""
 paths :: Parser () [String]
-paths = (\xs e -> xs <> [e]) <$> many notslash <*> takeRest
+paths = (\xs e -> xs <> [e]) <$> many notslash <*> (utf8ToStr <$> takeRest)
 
 -- | run the paths Parser, lefting on a badly formed path
 --
--- >>> S.toList $ S.take 100 $ S.filter isLeft $ fmap (parsePath . fst) $ S.filter ((==CabalName) . toNameType . fst) (packages (Unfold.take 10000000 archive))
+-- > S.toList $ S.take 100 $ S.filter isLeft $ fmap (parsePath . fst) $ S.filter ((==CabalName) . toNameType . fst) (packages (Unfold.take 10000000 archive))
 -- []
 parsePath :: ByteString -> Either ByteString (String, String)
 parsePath bs = case runParser paths bs of
@@ -323,7 +323,7 @@ toVer :: [Int] -> ByteString
 toVer xs = B.intercalate "." (C.pack . show <$> xs)
 
 digit :: Parser () Int
-digit = (\c -> ord c - ord '0') <$> satisfyASCII isDigit
+digit = (\c -> ord c - ord '0') <$> satisfyAscii isDigit
 
 int :: Parser () Int
 int = do
@@ -345,7 +345,7 @@ comma = $(string ",")
 braces :: Parser () String
 braces =
   $(string "{")
-    *> many (satisfyASCII (/= '}'))
+    *> many (satisfyAscii (/= '}'))
     <* $(string "}")
 
 parseOK :: Parser e a -> ByteString -> Either ByteString a
@@ -355,7 +355,7 @@ parseOK p bs = case runParser p bs of
 
 initialPackageChar :: Parser () Char
 initialPackageChar =
-  satisfyASCII
+  satisfyAscii
     ( `C.elem`
         ( C.pack $
             ['a' .. 'z']
@@ -366,7 +366,7 @@ initialPackageChar =
 
 packageChar :: Parser () Char
 packageChar =
-  satisfyASCII
+  satisfyAscii
     ( `C.elem`
         ( C.pack $
             ['a' .. 'z']
@@ -378,7 +378,7 @@ packageChar =
 
 invalidPackageChar :: Parser () Char
 invalidPackageChar =
-  satisfyASCII
+  satisfyAscii
     ( `C.notElem`
         ( C.pack $
             ['a' .. 'z']
@@ -392,7 +392,7 @@ validName :: Parser () String
 validName = (:) <$> initialPackageChar <*> many packageChar
 
 depField :: Parser () ByteString
-depField = C.pack . mconcat <$> many (some (satisfyASCII (not . (`elem` [',', '{']))) <|> braces)
+depField = C.pack . mconcat <$> many (some (satisfyAscii (not . (`elem` [',', '{']))) <|> braces)
 
 adep :: Parser () String
 adep = many invalidPackageChar *> validName <* takeLine
@@ -428,16 +428,16 @@ latestCabalFiles =
         (\((_, v), c) -> (v, c))
         (\x y -> bool x y (fst x < fst y))
     )
-    $ fmap (first (second (fromRight undefined))) $
-      S.filter (isRight . snd . fst) $
-        fmap
-          (first (second (parseVersion . C.pack) . fromRight undefined))
-          ( S.filter (isRight . fst) $
-              first parsePath
-                <$> S.filter
-                  ((== CabalName) . toNameType . fst)
-                  packageStream
-          )
+    $ fmap (first (second (fromRight undefined)))
+    $ S.filter (isRight . snd . fst)
+    $ fmap
+      (first (second (parseVersion . C.pack) . fromRight undefined))
+      ( S.filter (isRight . fst) $
+          first parsePath
+            <$> S.filter
+              ((== CabalName) . toNameType . fst)
+              packageStream
+      )
 
 -- | valid cabal files with all fields parsing ok
 validLatestCabals :: IO (Map.Map String ([Int], [Field Position]))
