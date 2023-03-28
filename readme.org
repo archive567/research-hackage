@@ -16,17 +16,18 @@ This repo is an experiment in:
 Notes on how to run ghci within org-mode are available at [[https://github.com/tonyday567/checklist#babel][checklist: How I start Haskell.]]
 
 #+begin_src haskell
+:set prompt "> "
 :set -XOverloadedStrings
 :set -Wno-type-defaults
-:set prompt "> "
 putStrLn "ok"
 #+end_src
 
 #+RESULTS:
-: *Research.Hackage> *Research.Hackage> *Research.Hackage> > ok
+: ok
 
 #+begin_src haskell
 :r
+import Research.Hackage
 import qualified Streamly.Prelude as S
 import qualified Streamly.Internal.Data.Unfold as Unfold
 import Data.Function
@@ -36,10 +37,11 @@ import qualified Data.ByteString.Char8 as C
 import Data.Bifunctor
 import qualified Data.Map.Strict as Map
 import DotParse
+import FlatParse.Basic qualified as FP
 import Algebra.Graph
 import qualified Algebra.Graph.ToGraph as ToGraph
 import Data.Foldable
-import Chart hiding (pathParse)
+import Chart
 import Optics.Core
 putStrLn "ok"
 #+end_src
@@ -66,8 +68,8 @@ edgeCount depG
 #+end_src
 
 #+RESULTS:
-: 14624
-: 105693
+: 15135
+: 109900
 
 depG is an algebraic-graph of the latest cabal library package names as the vertexes and their dependencies as the edges.
 
@@ -96,7 +98,7 @@ packageStream & S.map (const 1) & S.sum
 :   :: Unfold IO Void (Either Header ByteString)
 : groupByPathName (Unfold.take 10000000 archive)
 :   :: S.IsStream t => t IO (ByteString, ByteString)
-: 288831
+: 303794
 
 ** package names
 
@@ -133,7 +135,7 @@ S.length $ S.filter ((=="") . snd) $ packageStream
 #+end_src
 
 #+RESULTS:
-: 42
+: 43
 
 *** types of packages
 
@@ -158,10 +160,10 @@ S.fold count $ fmap (bimap toNameType (=="")) $ packageStream
 : data NameType
 :   = CabalName | PreferredVersions | PackageJson | BadlyNamed
 :   	-- Defined at src/Research/Hackage.hs:192:1
-: instance Show NameType -- Defined at src/Research/Hackage.hs:192:84
 : instance Eq NameType -- Defined at src/Research/Hackage.hs:192:95
 : instance Ord NameType -- Defined at src/Research/Hackage.hs:192:90
-: fromList [((CabalName,False),159469),((PreferredVersions,False),2845),((PreferredVersions,True),42),((PackageJson,False),126475)]
+: instance Show NameType -- Defined at src/Research/Hackage.hs:192:84
+: fromList [((CabalName,False),168535),((PreferredVersions,False),3115),((PreferredVersions,True),43),((PackageJson,False),132101)]
 
 **** preferred-versions
 
@@ -170,7 +172,11 @@ S.toList $ S.take 10 $ S.filter (\(x,c) -> B.isSuffixOf "preferred-versions" x &
 #+end_src
 
 #+RESULTS:
-: [("ADPfusion/preferred-versions","ADPfusion <0.4.0.0 || >0.4.0.0"),("AesonBson/preferred-versions","AesonBson <0.2.0 || >0.2.0 && <0.2.1 || >0.2.1"),("BiobaseXNA/preferred-versions","BiobaseXNA <0.9.1.0 || >0.9.1.0"),("BufferedSocket/preferred-versions","BufferedSocket <0.1.0.0 || >0.1.0.0 && <0.1.1.0 || >0.1.1.0"),("FTGL/preferred-versions","FTGL <1.4 || >1.4"),("HSlippyMap/preferred-versions","HSlippyMap <0.1.0.0 || >0.1.0.0 && <1.0 || >1.0 && <1.2 || >1.2 && <1.4 || >1.4 && <1.6 || >1.6 && <1.8 || >1.8 && <2.0 || >2.0 && <2.1 || >2.1"),("HaTeX-qq/preferred-versions","HaTeX-qq <0.0.0.0 || >0.0.0.0 && <0.0.1.0 || >0.0.1.0"),("Hs2lib/preferred-versions","Hs2lib <0.5.7 || >0.5.7 && <0.5.8 || >0.5.8"),("Hungarian-Munkres/preferred-versions","Hungarian-Munkres <0.1.0 || >0.1.0 && <0.1.1 || >0.1.1 && <0.1.2 || >0.1.2"),("IPv6Addr/preferred-versions","IPv6Addr >=0.5")]
+: <interactive>:54:94: error:
+:     Variable not in scope:
+:       packages
+:         :: Unfold IO Void (Either Header ByteString)
+:            -> S.SerialT m (ByteString, a)
 
 **** package-json
 
@@ -181,7 +187,7 @@ S.length $ S.filter ((\x -> B.isSuffixOf "package.json" x) . fst) $ packageStrea
 #+end_src
 
 #+RESULTS:
-: 126475
+: 132101
 
 
 #+begin_src haskell
@@ -201,7 +207,7 @@ S.length $ S.filter ((\x -> B.isSuffixOf ".cabal" x) . fst) $ packageStream
 #+end_src
 
 #+RESULTS:
-: 159469
+: 168535
 
 #+begin_src haskell
 fmap fst <$> (S.toList $ S.take 10 $ S.filter ((\x -> B.isSuffixOf ".cabal" x) . fst) $ packageStream)
@@ -225,7 +231,6 @@ length mErrs
 #+end_src
 
 #+RESULTS:
-:
 : > 0
 
 
@@ -238,7 +243,7 @@ length t1
 #+end_src
 
 #+RESULTS:
-: > 16511
+: > 17055
 
 Average number of versions:
 
@@ -292,7 +297,7 @@ length vlcs
 #+end_src
 
 #+RESULTS:
-: 16505
+: 17049
 
 *** field counts across all files
 
@@ -302,16 +307,16 @@ fmap (take 10 . List.sortOn (Down . snd) . Map.toList) $ S.fold count $ S.fromLi
 #+end_src
 
 #+RESULTS:
-| license       | 16509 |
-| name          | 16506 |
-| version       | 16505 |
-| maintainer    | 16431 |
-| synopsis      | 16336 |
-| cabal-version | 16240 |
-| category      | 16133 |
-| build-type    | 16097 |
-| author        | 16023 |
-| license-file  | 15883 |
+: <interactive>:32:7: error:
+:     Ambiguous occurrence ‘take’
+:     It could refer to
+:        either ‘Prelude.take’,
+:               imported from ‘Prelude’ at src/Research/Hackage.hs:14:8-23
+:               (and originally defined in ‘GHC.List’)
+:            or ‘FlatParse.Basic.take’,
+:               imported from ‘FlatParse.Basic’ at src/Research/Hackage.hs:83:1-22
+:               (and originally defined in ‘FlatParse.Basic.Base’)
+
 
 
 *** authors
@@ -322,13 +327,13 @@ fmap (take 10 . List.sortOn (Down . snd) . Map.toList) $ S.fold count $ S.fromLi
 
 #+RESULTS:
 | Brendan Hay                                        | 333 |
-| Nikita Volkov <nikita.y.volkov@mail.ru>            | 145 |
-| Tom Sydney Kerckhove                               | 108 |
-| Henning Thielemann <haskell@henning-thielemann.de> | 103 |
-| Andrew Martin                                      |  99 |
-| Edward A. Kmett                                    |  98 |
+| Nikita Volkov <nikita.y.volkov@mail.ru>            | 147 |
+| Tom Sydney Kerckhove                               | 118 |
+| Henning Thielemann <haskell@henning-thielemann.de> | 104 |
+| Andrew Martin                                      | 103 |
+| Edward A. Kmett                                    |  99 |
+| OleksandrZhabenko                                  |  89 |
 | Michael Snoyman                                    |  88 |
-| OleksandrZhabenko                                  |  82 |
 | M Farkas-Dyck                                      |  78 |
 | Vanessa McHale                                     |  78 |
 
@@ -341,7 +346,7 @@ Map.size $ Map.filter ((0==) . length) $ fmap (catMaybes . fmap (sec "library") 
 #+end_src
 
 #+RESULTS:
-: 1725
+: 1743
 
 multiple libraries
 
@@ -350,7 +355,7 @@ Map.size $ Map.filter ((>1) . length) $ fmap (catMaybes . fmap (sec "library") .
 #+end_src
 
 #+RESULTS:
-: 66
+: 79
 
 Multiple libraries are usually "internal" libraries that can only be used inside the cabal file.
 
@@ -359,7 +364,7 @@ take 10 $ Map.toList $ Map.filter (\x -> x/=[[]] && x/=[] && listToMaybe x /= Ju
 #+end_src
 
 #+RESULTS:
-: [("LiterateMarkdown",[[("name","converter")]]),("attoparsec",[[("name","attoparsec-internal")],[]]),("buffet",[[("name","buffet-internal")]]),("cabal-fmt",[[("name","cabal-fmt-internal")]]),("cuckoo",[[("name","random-internal")],[]]),("dhrun",[[("name","dhrun-lib")]]),("dns",[[("name","dns-internal")],[]]),("escoger",[[("name","escoger-lib")]]),("ghc-plugs-out",[[("name","no-op-plugin")],[("name","undefined-init-plugin")],[("name","undefined-solve-plugin")],[("name","undefined-stop-plugin")],[("name","call-count-plugin")]]),("haskell-ci",[[("name","haskell-ci-internal")]])]
+: [("LiterateMarkdown",[[("name","converter")]]),("attoparsec",[[("name","attoparsec-internal")],[]]),("balkon",[[("name","balkon-internal")],[]]),("buffet",[[("name","buffet-internal")]]),("cabal-fmt",[[("name","version-interval")],[("name","cabal-fmt-internal")]]),("cuckoo",[[("name","random-internal")],[]]),("dhrun",[[("name","dhrun-lib")]]),("dns",[[("name","dns-internal")],[]]),("escoger",[[("name","escoger-lib")]]),("ghc-plugs-out",[[("name","no-op-plugin")],[("name","undefined-init-plugin")],[("name","undefined-solve-plugin")],[("name","undefined-stop-plugin")],[("name","call-count-plugin")]])]
 
 
 common stanzas
@@ -369,7 +374,7 @@ length $ Map.toList $ Map.filter (/=[]) $ fmap (catMaybes . fmap (sec "common"))
 #+end_src
 
 #+RESULTS:
-: 568
+: 737
 
 valid cabal files that have a library section:
 
@@ -379,7 +384,7 @@ Map.size vlibs
 #+end_src
 
 #+RESULTS:
-: 14779
+: 15305
 
 ** dependencies
 
@@ -459,20 +464,30 @@ take 3 $ Map.toList deps
 packages with the most dependencies:
 
 #+begin_src haskell :exports both
-take 10 $ List.sortOn (Down . snd) $ fmap (second length) $ Map.toList deps
+take 20 $ List.sortOn (Down . snd) $ fmap (second length) $ Map.toList deps
 #+end_src
 
 #+RESULTS:
 | yesod-platform  | 132 |
+| hackport        | 127 |
 | planet-mitchell | 109 |
 | raaz            | 104 |
+| hevm            |  84 |
 | sockets         |  82 |
-| ghcide          |  75 |
-| pandoc          |  70 |
+| btc-lsp         |  71 |
+| too-many-cells  |  70 |
+| ghcide          |  69 |
+| pandoc          |  68 |
+| cachix          |  67 |
 | sprinkles       |  67 |
-| too-many-cells  |  67 |
+| emanote         |  64 |
+| freckle-app     |  64 |
 | pantry-tmp      |  64 |
-| purescript      |  62 |
+| taffybar        |  63 |
+| neuron          |  61 |
+| project-m36     |  61 |
+| NGLess          |  60 |
+| stack           |  59 |
 
 dependees
 
@@ -481,26 +496,26 @@ fmap (take 20) $ fmap (List.sortOn (Down . snd)) $ fmap Map.toList $ S.fold coun
 #+end_src
 
 #+RESULTS:
-| base                 | 14221 |
-| bytestring           |  5206 |
-| text                 |  4743 |
-| containers           |  4532 |
-| mtl                  |  3378 |
-| transformers         |  2991 |
-| aeson                |  1927 |
-| time                 |  1866 |
-| vector               |  1740 |
-| directory            |  1556 |
-| filepath             |  1476 |
-| template-haskell     |  1391 |
-| unordered-containers |  1349 |
-| deepseq              |  1193 |
-| lens                 |  1150 |
-| binary               |   910 |
-| hashable             |   890 |
-| array                |   860 |
-| process              |   828 |
-| exceptions           |   810 |
+| base                 | 14709 |
+| bytestring           |  5399 |
+| text                 |  4969 |
+| containers           |  4712 |
+| mtl                  |  3473 |
+| transformers         |  3069 |
+| aeson                |  2021 |
+| time                 |  1932 |
+| vector               |  1797 |
+| directory            |  1608 |
+| filepath             |  1532 |
+| template-haskell     |  1456 |
+| unordered-containers |  1388 |
+| deepseq              |  1248 |
+| lens                 |  1175 |
+| binary               |   932 |
+| hashable             |   930 |
+| array                |   889 |
+| exceptions           |   855 |
+| process              |   851 |
 
 
 All the dependees found:
@@ -512,7 +527,7 @@ length bdnames
 #+end_src
 
 #+RESULTS:
-: > 5628
+: > 5873
 
 *** dependency name errors
 
@@ -623,6 +638,8 @@ edgeCount depG
  superG = induce (`elem` (toList supers)) depG
  #+end_src
 
+#+RESULTS:
+
 #+begin_src haskell :file other/textdeps.svg :results output graphics file :exports results
  baseGraph = defaultGraph & attL NodeType (ID "shape") .~ Just (ID "box") & gattL (ID "rankdir") .~ Just (IDQuoted "BT")
  g <- processGraph $ toDotGraphWith UnDirected baseGraph (fmap packUTF8 superG)
@@ -641,9 +658,9 @@ edgeCount depG
  #+end_src
 
  #+RESULTS:
- : <interactive>:38:2: warning: [-Wname-shadowing]
+ : <interactive>:117:2: warning: [-Wname-shadowing]
  :     This binding for ‘superG’ shadows the existing binding
- :       defined at <interactive>:35:2
+ :       defined at <interactive>:110:2
 
 
 #+begin_src haskell :file other/foldsdeps.svg :results output graphics file :exports results
@@ -662,6 +679,11 @@ edgeCount depG
  supers = upstreams "mealy" depG <> Set.singleton "mealy"
  superG = induce (`elem` (toList (Set.delete "base" supers))) depG
  #+end_src
+
+#+RESULTS:
+: <interactive>:124:2: warning: [-Wname-shadowing]
+:     This binding for ‘superG’ shadows the existing binding
+:       defined at <interactive>:117:2
 
 #+begin_src haskell :file other/mealy.svg :results output graphics file :exports results
  g <- processGraph $ toDotGraphWith UnDirected baseGraph (fmap packUTF8 superG)
