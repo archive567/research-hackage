@@ -1,9 +1,9 @@
 packages:
   research-hackage.cabal
 
-source-repository-package
-  type: git
-  branch: main
-  location: https://github.com/tonyday567/dotparse.git
+-- source-repository-package
+--  type: git
+--  branch: main
+--  location: https://github.com/tonyday567/dotparse.git
 
 allow-newer: streamly-archive:bytestring

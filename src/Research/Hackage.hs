@@ -2,6 +2,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# HLINT ignore "Redundant bracket" #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -53,40 +54,41 @@ module Research.Hackage
 where
 
 import Algebra.Graph hiding (empty)
-import qualified Algebra.Graph.ToGraph as ToGraph
+import Algebra.Graph.ToGraph qualified as ToGraph
 import Control.Applicative (liftA2)
 import Crypto.Hash (hashFinalize, hashInit, hashUpdate)
 import Crypto.Hash.Algorithms (SHA256)
 import Data.Bifunctor
 import Data.Bool
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as C
+import Data.ByteString qualified as B
+import Data.ByteString.Char8 qualified as C
 import Data.Char (ord)
 import Data.Either
 import Data.Foldable
 import Data.Function ((&))
 import Data.Functor.Identity
-import qualified Data.Graph.Inductive.Graph as G
+import Data.Graph.Inductive.Graph qualified as G
 import Data.Graph.Inductive.PatriciaTree (Gr)
 import Data.Graph.Inductive.Query.DFS
-import qualified Data.IntMap.Strict as IntMap
-import qualified Data.List as List
-import qualified Data.Map.Strict as Map
+import Data.IntMap.Strict qualified as IntMap
+import Data.List qualified as List
+import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Void (Void)
 import Distribution.Fields
 import Distribution.Fields.Field
 import Distribution.Parsec.Position (Position)
-import FlatParse.Basic
+import FlatParse.Basic (Parser)
+import FlatParse.Basic qualified as FP
 import GHC.IO.Unsafe (unsafePerformIO)
 import Streamly.External.Archive
 import Streamly.Internal.Data.Fold.Type (Fold (Fold), Step (Partial))
-import qualified Streamly.Internal.Data.Unfold as Unfold
+import Streamly.Internal.Data.Unfold qualified as Unfold
 import Streamly.Internal.Data.Unfold.Type (Unfold)
-import qualified Streamly.Prelude as S
+import Streamly.Prelude qualified as S
 import System.Directory
 
 -- $setup
@@ -281,31 +283,31 @@ collect' k v c = Fold step initial done
 -- * flatparse parsing
 
 slash :: Parser () ()
-slash = $(char '/')
+slash = $(FP.char '/')
 
 notslash :: Parser () String
-notslash = chainr (:) (satisfy (/= '/')) (fmap (const []) slash)
+notslash = FP.chainr (:) (FP.satisfy (/= '/')) (fmap (const []) slash)
 
 cabalSuffix :: Parser () ()
-cabalSuffix = $(string ".cabal")
+cabalSuffix = $(FP.string ".cabal")
 
 notcabal :: Parser () String
-notcabal = chainr (:) anyChar (fmap (const []) cabalSuffix)
+notcabal = FP.chainr (:) FP.anyChar (fmap (const []) cabalSuffix)
 
 -- | parse a .cabal path into a list of sections
 --
 -- >>> runParser paths "1/2/3.cabal"
 -- OK ["1","2","3.cabal"] ""
 paths :: Parser () [String]
-paths = (\xs e -> xs <> [e]) <$> many notslash <*> (utf8ToStr <$> takeRest)
+paths = (\xs e -> xs <> [e]) <$> FP.many notslash <*> (FP.utf8ToStr <$> FP.takeRest)
 
 -- | run the paths Parser, lefting on a badly formed path
 --
 -- > S.toList $ S.take 100 $ S.filter isLeft $ fmap (parsePath . fst) $ S.filter ((==CabalName) . toNameType . fst) (packages (Unfold.take 10000000 archive))
 -- []
 parsePath :: ByteString -> Either ByteString (String, String)
-parsePath bs = case runParser paths bs of
-  OK [a, b, c] "" -> bool (Left bs) (Right (a, b)) (Just (C.pack a) == B.stripSuffix ".cabal" (C.pack c))
+parsePath bs = case FP.runParser paths bs of
+  FP.OK [a, b, c] "" -> bool (Left bs) (Right (a, b)) (Just (C.pack a) == B.stripSuffix ".cabal" (C.pack c))
   _ -> Left bs
 
 -- | version number parsing
@@ -313,9 +315,9 @@ parsePath bs = case runParser paths bs of
 -- >>> parseVersion "1.0.0.1"
 -- Right [1,0,0,1]
 parseVersion :: ByteString -> Either ByteString [Int]
-parseVersion bs = case runParser ints' bs of
-  OK [] _ -> Left bs
-  OK xs "" -> Right xs
+parseVersion bs = case FP.runParser ints' bs of
+  FP.OK [] _ -> Left bs
+  FP.OK xs "" -> Right xs
   _ -> Left bs
 
 -- | convert from a version list to a bytestring.
@@ -323,39 +325,39 @@ toVer :: [Int] -> ByteString
 toVer xs = B.intercalate "." (C.pack . show <$> xs)
 
 digit :: Parser () Int
-digit = (\c -> ord c - ord '0') <$> satisfyAscii isDigit
+digit = (\c -> ord c - ord '0') <$> FP.satisfyAscii FP.isDigit
 
 int :: Parser () Int
 int = do
-  (place, n) <- chainr (\n (!place, !acc) -> (place * 10, acc + place * n)) digit (pure (1, 0))
+  (place, n) <- FP.chainr (\n (!place, !acc) -> (place * 10, acc + place * n)) digit (pure (1, 0))
   case place of
-    1 -> empty
+    1 -> FP.empty
     _ -> pure n
 
 ints' :: Parser () [Int]
-ints' = (\xs e -> xs <> [e]) <$> many (const <$> int <*> vdot) <*> int
+ints' = (\xs e -> xs <> [e]) <$> FP.many (const <$> int <*> vdot) <*> int
 
 vdot :: Parser () ()
-vdot = $(char '.')
+vdot = $(FP.char '.')
 
 comma :: Parser () ()
-comma = $(string ",")
+comma = $(FP.string ",")
 
 -- | braces
 braces :: Parser () String
 braces =
-  $(string "{")
-    *> many (satisfyAscii (/= '}'))
-    <* $(string "}")
+  $(FP.string "{")
+    *> FP.many (FP.satisfyAscii (/= '}'))
+    <* $(FP.string "}")
 
 parseOK :: Parser e a -> ByteString -> Either ByteString a
-parseOK p bs = case runParser p bs of
-  OK a "" -> Right a
+parseOK p bs = case FP.runParser p bs of
+  FP.OK a "" -> Right a
   _ -> Left bs
 
 initialPackageChar :: Parser () Char
 initialPackageChar =
-  satisfyAscii
+  FP.satisfyAscii
     ( `C.elem`
         ( C.pack $
             ['a' .. 'z']
@@ -366,7 +368,7 @@ initialPackageChar =
 
 packageChar :: Parser () Char
 packageChar =
-  satisfyAscii
+  FP.satisfyAscii
     ( `C.elem`
         ( C.pack $
             ['a' .. 'z']
@@ -378,7 +380,7 @@ packageChar =
 
 invalidPackageChar :: Parser () Char
 invalidPackageChar =
-  satisfyAscii
+  FP.satisfyAscii
     ( `C.notElem`
         ( C.pack $
             ['a' .. 'z']
@@ -389,19 +391,19 @@ invalidPackageChar =
     )
 
 validName :: Parser () String
-validName = (:) <$> initialPackageChar <*> many packageChar
+validName = (:) <$> initialPackageChar <*> FP.many packageChar
 
 depField :: Parser () ByteString
-depField = C.pack . mconcat <$> many (some (satisfyAscii (not . (`elem` [',', '{']))) <|> braces)
+depField = C.pack . mconcat <$> FP.many (FP.some (FP.satisfyAscii (not . (`elem` [',', '{']))) FP.<|> braces)
 
 adep :: Parser () String
-adep = many invalidPackageChar *> validName <* takeLine
+adep = FP.many invalidPackageChar *> validName <* FP.takeLine
 
 intercalated :: Parser () item -> Parser () sep -> Parser () [item]
 intercalated item sep =
-  optional comma
-    *> ((:) <$> item <*> chainr (:) (sep *> item) (pure []))
-    <* optional comma
+  FP.optional comma
+    *> ((:) <$> item <*> FP.chainr (:) (sep *> item) (pure []))
+    <* FP.optional comma
 
 -- | dependency name
 --
