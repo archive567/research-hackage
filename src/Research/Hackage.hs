@@ -1,8 +1,8 @@
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE BlockArguments #-}
 {-# HLINT ignore "Redundant bracket" #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -54,42 +54,42 @@ module Research.Hackage
 where
 
 import Algebra.Graph hiding (empty)
-import qualified Algebra.Graph.ToGraph as ToGraph
+import Algebra.Graph.ToGraph qualified as ToGraph
 import Control.Applicative (liftA2)
 import Crypto.Hash (hashFinalize, hashInit, hashUpdate)
 import Crypto.Hash.Algorithms (SHA256)
 import Data.Bifunctor
 import Data.Bool
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as C
+import Data.ByteString qualified as B
+import Data.ByteString.Char8 qualified as C
 import Data.Char (ord)
 import Data.Either
 import Data.Foldable
 import Data.Function ((&))
 import Data.Functor.Identity
-import qualified Data.Graph.Inductive.Graph as G
+import Data.Graph.Inductive.Graph qualified as G
 import Data.Graph.Inductive.PatriciaTree (Gr)
 import Data.Graph.Inductive.Query.DFS
-import qualified Data.IntMap.Strict as IntMap
-import qualified Data.List as List
-import qualified Data.Map.Strict as Map
+import Data.IntMap.Strict qualified as IntMap
+import Data.List qualified as List
+import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Void (Void)
 import Distribution.Fields
 import Distribution.Fields.Field
 import Distribution.Parsec.Position (Position)
+import FlatParse.Basic (Parser)
 import FlatParse.Basic qualified as FP
 import GHC.IO.Unsafe (unsafePerformIO)
 import Streamly.External.Archive
 import Streamly.Internal.Data.Fold.Type (Fold (Fold), Step (Partial))
-import qualified Streamly.Internal.Data.Unfold as Unfold
+import Streamly.Internal.Data.Unfold qualified as Unfold
 import Streamly.Internal.Data.Unfold.Type (Unfold)
-import qualified Streamly.Prelude as S
+import Streamly.Prelude qualified as S
 import System.Directory
-import FlatParse.Basic (Parser)
 
 -- $setup
 --
