@@ -11,6 +11,8 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Research.Hackage
   ( -- * archive extraction
@@ -32,6 +34,7 @@ module Research.Hackage
 
     -- * streamly folds
     count,
+    count_,
     collect,
     collect',
 
@@ -50,6 +53,8 @@ module Research.Hackage
     -- * graphics
     upstreams,
     diffUpstreamSet,
+
+    license,
   )
 where
 
@@ -84,12 +89,13 @@ import Distribution.Parsec.Position (Position)
 import FlatParse.Basic (Parser)
 import FlatParse.Basic qualified as FP
 import GHC.IO.Unsafe (unsafePerformIO)
-import Streamly.External.Archive
+import Streamly.External.Archive hiding (groupByHeader)
 import Streamly.Internal.Data.Fold.Type (Fold (Fold), Step (Partial))
 import Streamly.Internal.Data.Unfold qualified as Unfold
 import Streamly.Internal.Data.Unfold.Type (Unfold)
 import Streamly.Prelude qualified as S
 import System.Directory
+import Data.String.Interpolate
 
 -- $setup
 --
@@ -263,6 +269,9 @@ count = Fold step initial done
     step x a = pure $ Partial $ Map.insertWith (+) a 1 x
     initial = pure $ Partial Map.empty
     done = pure
+
+count_ :: (Ord a) => [a] -> Map.Map a Int
+count_ = foldl' (\x a -> Map.insertWith (+) a 1 x) Map.empty
 
 -- | split an 'a' into a key-value pair where the value is a monoid, and collect into a map.
 collect :: (Applicative m, Ord k) => (a -> k) -> (a -> v) -> Fold m a (Map.Map k [v])
@@ -465,3 +474,38 @@ upstreams t g = go (t `ToGraph.postSet` g)
     go s =
       let s' = diffUpstreamSet g s
        in bool (go (s <> s')) s (Set.empty == s')
+
+license :: String -> String -> String
+license a y = [i|
+
+Copyright #{a} (c) #{y}
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    ,* Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    ,* Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+
+    ,* Neither the name of #{a} nor the names of other
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+|]

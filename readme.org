@@ -27,6 +27,7 @@ putStrLn "ok"
 
 #+begin_src haskell
 :r
+:set -Wno-deprecations
 import Research.Hackage
 import qualified Streamly.Prelude as S
 import qualified Streamly.Internal.Data.Unfold as Unfold
@@ -42,12 +43,415 @@ import Algebra.Graph
 import qualified Algebra.Graph.ToGraph as ToGraph
 import Data.Foldable
 import Chart
+import Data.String.Interpolate
 import Optics.Core
 putStrLn "ok"
 #+end_src
 
 #+RESULTS:
 : ok
+
+** ToDo directory listing
+
+#+begin_src haskell :results output
+import System.Directory
+import Control.Monad
+import Data.List
+#+end_src
+
+#+RESULTS:
+: <interactive>:29:8: warning: [-Wcompat-unqualified-imports]
+:     To ensure compatibility with future core libraries changes
+:     imports to Data.List should be
+:     either qualified or have an explicit import list.
+
+#+begin_src haskell :results output
+h <- getHomeDirectory & fmap (<> "/haskell")
+ds <- getDirectoryContents h
+ds' = filter (\x -> x /= "." && x /= "..") ds
+ds'' <- filterM doesDirectoryExist $ (\x -> h <> "/" <> x) <$> ds'
+fs <- mapM (\x -> (x,) <$> getDirectoryContents x) ds''
+cabals = mconcat $ fmap ((\(d,fs)-> (\f -> d <> "/" <> f) <$> fs) . second (filter (isSuffixOf ".cabal"))) fs
+#+end_src
+
+#+RESULTS:
+: <interactive>:36:31: warning: [-Wname-shadowing]
+:     This binding for ‘fs’ shadows the existing binding
+:       defined at <interactive>:35:1
+
+
+
+
+
+#+begin_src haskell :results output
+cabals
+#+end_src
+
+#+RESULTS:
+: ["/Users/tonyday/haskell/numhask/numhask.cabal","/Users/tonyday/haskell/mealy/mealy.cabal","/Users/tonyday/haskell/box/box.cabal","/Users/tonyday/haskell/formatn/formatn.cabal","/Users/tonyday/haskell/prettychart/prettychart.cabal","/Users/tonyday/haskell/code/code.cabal","/Users/tonyday/haskell/poker-fold/poker-fold.cabal","/Users/tonyday/haskell/numhask-space/numhask-space.cabal","/Users/tonyday/haskell/iqfeed/iqfeed.cabal","/Users/tonyday/haskell/box-socket/box-socket.cabal","/Users/tonyday/haskell/numhask-array/numhask-array.cabal","/Users/tonyday/haskell/euler/eulerproject.cabal","/Users/tonyday/haskell/tonyday567/tonyday567.cabal","/Users/tonyday/haskell/foo/foo.cabal","/Users/tonyday/haskell/web-rep/web-rep.cabal","/Users/tonyday/haskell/baz/baz.cabal","/Users/tonyday/haskell/dotparse/dotparse.cabal","/Users/tonyday/haskell/perf/perf.cabal","/Users/tonyday/haskell/anal/anal.cabal","/Users/tonyday/haskell/research-hackage/research-hackage.cabal","/Users/tonyday/haskell/chart-svg/chart-svg.cabal","/Users/tonyday/haskell/ephemeral/ephemeral.cabal"]
+
+
+Cabal file contents in the haskell directory:
+
+#+begin_src haskell :results output
+haskellStream = S.unfold Unfold.fromListM ((\x -> (x,) <$> readFile x) <$> cabals)
+:t haskellStream
+#+end_src
+
+#+RESULTS:
+: haskellStream :: S.IsStream t =
+: t IO (FilePath, String)
+
+ #+begin_src haskell :results output
+s = fmap (first C.pack . second C.pack) haskellStream
+ #+end_src
+
+#+RESULTS:
+
+package count
+
+ #+begin_src haskell :results output
+s & S.map (const 1) & S.sum
+ #+end_src
+
+#+RESULTS:
+: 21
+
+files
+
+#+begin_src haskell :results output
+fields <- S.toList $ fmap (fromRight undefined . readFields . snd) s
+#+end_src
+
+#+RESULTS:
+
+#+begin_src haskell :results output
+fmap length fields
+#+end_src
+
+#+RESULTS:
+: [20,18,20,17,19,20,21,20,24,17,20,18,18,20,18,18,21,17,18,21,17]
+
+
+ #+begin_src haskell :results output
+count_ $ mconcat $ fmap (fmap names) fields
+ #+end_src
+
+#+RESULTS:
+: fromList [("author",20),("bug-reports",20),("build-type",21),("cabal-version",21),("category",21),("common",41),("copyright",20),("description",21),("executable",14),("extra-doc-files",10),("extra-source-files",1),("homepage",20),("library",20),("license",20),("license-file",8),("maintainer",21),("name",21),("source-repository",21),("stability",1),("synopsis",21),("test-suite",3),("tested-with",15),("version",21)]
+
+*** ToDo questions
+
+- which cabal has no author?
+- common?
+- extra-source-files
+- stability
+- test-suite * 3
+
+finding exclusions
+
+#+begin_src haskell :results output
+S.toList $ fmap fst $ S.filter (not . any ((=="copyright") . names) . snd) $ fmap (second (fromRight undefined . readFields)) s
+#+end_src
+
+#+RESULTS:
+: ["/Users/tonyday/haskell/web-rep/web-rep.cabal"]
+
+looking at single fields
+
+#+begin_src haskell
+S.toList $ fmap (second (mconcat . fmap (fieldValue "copyright"))) $ fmap (second (fromRight undefined . readFields)) s
+#+end_src
+
+#+RESULTS:
+| /Users/tonyday/haskell/numhask/numhask.cabal                   | (Tony Day)                  |
+| /Users/tonyday/haskell/mealy/mealy.cabal                       | (Tony Day (c) 2013 - 2022)  |
+| /Users/tonyday/haskell/box/box.cabal                           | (Tony Day (c) 2017)         |
+| /Users/tonyday/haskell/formatn/formatn.cabal                   | (2016 Tony Day)             |
+| /Users/tonyday/haskell/prettychart/prettychart.cabal           | (Tony Day (c) 2023)         |
+| /Users/tonyday/haskell/code/code.cabal                         | (Copyrite, Tony Day, 2023-) |
+| /Users/tonyday/haskell/poker-fold/poker-fold.cabal             | (Tony Day (c) 2020-2023)    |
+| /Users/tonyday/haskell/numhask-space/numhask-space.cabal       | (Tony Day)                  |
+| /Users/tonyday/haskell/iqfeed/iqfeed.cabal                     | (Tony Day 2014-2021)        |
+| /Users/tonyday/haskell/box-socket/box-socket.cabal             | (Tony Day (c) AfterTimes)   |
+| /Users/tonyday/haskell/numhask-array/numhask-array.cabal       | (Tony Day)                  |
+| /Users/tonyday/haskell/euler/eulerproject.cabal                | (Tony Day (c) AfterTimes)   |
+| /Users/tonyday/haskell/tonyday567/tonyday567.cabal             | (Tony Day (c) AfterTimes)   |
+| /Users/tonyday/haskell/foo/foo.cabal                           | (Copyrite, Tony Day, 2023-) |
+| /Users/tonyday/haskell/web-rep/web-rep.cabal                   | nil                         |
+| /Users/tonyday/haskell/dotparse/dotparse.cabal                 | (Tony Day (c) 2022)         |
+| /Users/tonyday/haskell/perf/perf.cabal                         | (Tony Day)                  |
+| /Users/tonyday/haskell/anal/anal.cabal                         | (Copyrite, Tony Day, 2023-) |
+| /Users/tonyday/haskell/research-hackage/research-hackage.cabal | (Tony Day (c) 2022)         |
+| /Users/tonyday/haskell/chart-svg/chart-svg.cabal               | (Tony Day (c) 2017)         |
+| /Users/tonyday/haskell/ephemeral/ephemeral.cabal               | (Tony Day (c) AfterTimes)   |
+
+ #+begin_src haskell :results output
+:t count
+ #+end_src
+
+#+RESULTS:
+: count
+:   :: (Applicative m, Ord a) =>
+:      Streamly.Internal.Data.Fold.Type.Fold m a (Map.Map a Int)
+
+
+#+begin_src haskell :results output
+yearList = [("numhask",2016),("mealy",2013),("box",2017),("formatn",2016),("prettychart",2023),("code",2023),("poker-fold",2020),("numhask-space",2016),("iqfeed",2014),("box-socket",2017),("numhask-array",2016),("euler",2023),("tonyday567",2020),("foo",2023),("web-rep",2015),("dotparse",2022),("perf",2018),("anal",2023),("research-hackage",2022),("chart-svg",2017),("ephemeral",2020)]
+:t yearList :: [(String, Int)]
+#+end_src
+
+#+RESULTS:
+: yearList :: [(String, Int)] :: [(String, Int)]
+
+#+begin_src haskell :results output
+license a y = [i|
+
+Copyright #{a} (c) #{y}
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    ,* Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    ,* Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+
+    ,* Neither the name of #{a} nor the names of other
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+|]
+#+end_src
+
+#+RESULTS:
+#+begin_example
+<interactive>:48:18: error:
+    parse error (possibly incorrect indentation or mismatched brackets)
+<interactive>:50:12: error: parse error on input ‘{’
+<interactive>:52:21: error:
+    parse error (possibly incorrect indentation or mismatched brackets)
+<interactive>:54:24: error: parse error on input ‘in’
+<interactive>:55:19: error: parse error on input ‘permitted’
+<interactive>:57:5: error: parse error on input ‘*’
+<interactive>:58:20: error: parse error on input ‘list’
+<interactive>:60:5: error: parse error on input ‘*’
+<interactive>:61:23: error: parse error on input ‘,’
+<interactive>:62:18: error: parse error on input ‘in’
+<interactive>:63:29: error:
+    parse error (possibly incorrect indentation or mismatched brackets)
+<interactive>:65:5: error: parse error on input ‘*’
+<interactive>:66:7: error:
+    Variable not in scope:
+      contributors
+        :: t0
+           -
+t1
+           -
+t2
+           -
+((s0 -
+a0) -
+Getter s0 a0)
+           -
+t3
+           -
+(t4 Bool -
+Bool)
+           -
+t5
+           -
+t6
+           -
+t7
+           -
+t
+
+<interactive>:66:20: error:
+    Variable not in scope: may
+    Suggested fix:
+      Perhaps use one of these:
+        ‘map’ (imported from Data.List),
+        ‘C.map’ (imported from Data.ByteString.Char8),
+        ‘Set.map’ (imported from Data.Set)
+
+<interactive>:66:24: error:
+    Variable not in scope: be
+    Suggested fix:
+      Perhaps use one of these:
+        ‘re’ (imported from Optics.Core), ‘te’ (imported from Chart)
+
+<interactive>:66:27: error: Variable not in scope: used
+
+<interactive>:66:35: error: Variable not in scope: endorse
+
+<interactive>:66:46: error: Variable not in scope: promote
+
+<interactive>:66:54: error:
+    Variable not in scope: products
+    Suggested fix:
+      Perhaps use one of these:
+        ‘product’ (imported from Data.Foldable),
+        ‘S.product’ (imported from Streamly.Prelude),
+        ‘productOf’ (imported from Optics.Core)
+
+<interactive>:66:63: error: Variable not in scope: derived
+<interactive>:67:68: error:
+    parse error (possibly incorrect indentation or mismatched brackets)
+<interactive>:69:1: error:
+    Data constructor not in scope:
+      THIS :: t0 -
+t1 -
+t2 -
+t3 -
+t4 -
+t5 -
+t6 -
+t7 -
+t8 -
+t
+
+<interactive>:69:6: error: Data constructor not in scope: SOFTWARE
+
+<interactive>:69:15: error:
+    Data constructor not in scope: IS
+    Suggested fix: Perhaps use ‘ID’ (imported from DotParse)
+
+<interactive>:69:18: error: Data constructor not in scope: PROVIDED
+
+<interactive>:69:27: error: Data constructor not in scope: BY
+
+<interactive>:69:30: error: Data constructor not in scope: THE
+
+<interactive>:69:34: error:
+    Data constructor not in scope: COPYRIGHT
+
+<interactive>:69:44: error: Data constructor not in scope: HOLDERS
+
+<interactive>:69:52: error: Data constructor not in scope: AND
+
+<interactive>:69:56: error:
+    Data constructor not in scope: CONTRIBUTORS
+<interactive>:70:46: error: parse error on input ‘,’
+<interactive>:71:11: error: parse error on input ‘,’
+<interactive>:72:1: error:
+    Data constructor not in scope: A :: t5 -
+t6 -
+t7 -
+t8 -
+b0 -
+c
+
+<interactive>:72:3: error:
+    Data constructor not in scope: PARTICULAR
+
+<interactive>:72:14: error: Data constructor not in scope: PURPOSE
+
+<interactive>:72:22: error: Data constructor not in scope: ARE
+
+<interactive>:72:26: error:
+    Data constructor not in scope: DISCLAIMED
+
+<interactive>:72:38: error:
+    Data constructor not in scope:
+      IN :: t0 -
+t1 -
+t2 -
+t3 -
+t4 -
+a -
+b0
+    Suggested fix: Perhaps use ‘ID’ (imported from DotParse)
+
+<interactive>:72:41: error: Data constructor not in scope: NO
+
+<interactive>:72:44: error: Data constructor not in scope: EVENT
+
+<interactive>:72:50: error: Data constructor not in scope: SHALL
+
+<interactive>:72:56: error: Data constructor not in scope: THE
+
+<interactive>:72:60: error:
+    Data constructor not in scope: COPYRIGHT
+<interactive>:73:47: error: parse error on input ‘,’
+<interactive>:74:8: error: parse error on input ‘,’
+<interactive>:75:11: error: parse error on input ‘,’
+<interactive>:76:5: error: parse error on input ‘,’
+<interactive>:77:20: error: parse error on input ‘,’
+<interactive>:78:2: error:
+    Data constructor not in scope:
+      INCLUDING
+        :: t0
+           -
+t1 -
+t2 -
+t3 -
+t4 -
+t5 -
+t6 -
+t7 -
+t8 -
+t9 -
+t10 -
+t
+
+<interactive>:78:12: error:
+    Data constructor not in scope: NEGLIGENCE
+
+<interactive>:78:23: error:
+    Data constructor not in scope: OR
+    Suggested fix: Perhaps use ‘FP.OK’ (imported from FlatParse.Basic)
+
+<interactive>:78:26: error:
+    Data constructor not in scope: OTHERWISE
+
+<interactive>:78:37: error: Data constructor not in scope: ARISING
+
+<interactive>:78:45: error:
+    Data constructor not in scope: IN
+    Suggested fix: Perhaps use ‘ID’ (imported from DotParse)
+
+<interactive>:78:48: error: Data constructor not in scope: ANY
+
+<interactive>:78:52: error: Data constructor not in scope: WAY
+
+<interactive>:78:56: error: Data constructor not in scope: OUT
+
+<interactive>:78:60: error:
+    Data constructor not in scope: OF
+    Suggested fix: Perhaps use ‘FP.OK’ (imported from FlatParse.Basic)
+
+<interactive>:78:63: error: Data constructor not in scope: THE
+
+<interactive>:78:67: error: Data constructor not in scope: USE
+<interactive>:79:17: error: parse error on input ‘,’
+<interactive>:80:1: error: parse error on input ‘|]’
+#+end_example
+
+
+
+
+
+** archive
+
+*** development loop
+
 
 The development loop largely starts with re-establishment of state by running the code below, which represents milestones in parsing cabal index data, and (eventual) reification in ~Research.Hackage~.
 
@@ -73,7 +477,7 @@ edgeCount depG
 
 depG is an algebraic-graph of the latest cabal library package names as the vertexes and their dependencies as the edges.
 
-** archive
+
 
 archive is located at =~/.cabal/packages/hackage.haskell.org/01-index.tar= and contains @ 290k unique entries (May 2022).
 

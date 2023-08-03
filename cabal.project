@@ -1,9 +1,6 @@
 packages:
   research-hackage.cabal
 
--- source-repository-package
---  type: git
---  branch: main
---  location: https://github.com/tonyday567/dotparse.git
-
-allow-newer: streamly-archive:bytestring
+allow-newer: streamly-core:ghc-prim,
+             streamly:template-haskell,
+             streamly-core:template-haskell
